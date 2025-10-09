@@ -1,10 +1,13 @@
 import React from 'react';
+import { getCoursesOverview } from '../../../lib/db';
+import CoursesView from './CoursesView';
 
-export default function Cursos() {
+export default async function Cursos() {
+  const courses = await getCoursesOverview();
+
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Cursos</h1>
-      <p className="text-gray-600">Materiales y recursos por asignatura aparecerán aquí.</p>
+      <CoursesView courses={courses} />
     </div>
   );
 }

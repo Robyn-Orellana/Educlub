@@ -57,3 +57,36 @@ export async function getTutorAssignments(userId: number) {
   `;
   return rows;
 }
+
+export async function getCoursesOverview(): Promise<Course[]> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT
+      c.code,
+      c.name,
+      c.description,
+      u.first_name || ' ' || u.last_name AS tutor,
+      COUNT(DISTINCT e.user_id) AS inscritos,
+      COUNT(DISTINCT s.id) AS sesiones,
+      ROUND(AVG(r.stars)::numeric,2) AS promedio_estrellas
+    FROM courses c
+    LEFT JOIN tutor_courses tc ON tc.course_id = c.id
+    LEFT JOIN users u ON u.id = tc.tutor_id
+    LEFT JOIN enrollments e ON e.course_id = c.id
+    LEFT JOIN tutoring_sessions s ON s.course_id = c.id
+    LEFT JOIN ratings r ON r.course_id = c.id
+    GROUP BY c.id, tutor
+    ORDER BY c.code
+  `;
+  return rows as Course[];
+}
+
+export type Course = {
+  code: string;
+  name: string;
+  description?: string | null;
+  tutor?: string | null;
+  inscritos?: number | null;
+  sesiones?: number | null;
+  promedio_estrellas?: number | null;
+};
