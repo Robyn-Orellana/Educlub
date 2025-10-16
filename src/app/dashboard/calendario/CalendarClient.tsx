@@ -3,7 +3,18 @@
 import React from 'react';
 import CalendarView from './CalendarView';
 
-export default function CalendarClient({ sessions }: { sessions: any[] }) {
+type TutorSession = {
+  session_id: number;
+  course_code: string;
+  course_name: string;
+  scheduled_at: string;
+  duration_min: number;
+  platform: string;
+  status: string;
+  total_reservas: number;
+};
+
+export default function CalendarClient({ sessions }: { sessions: TutorSession[] }) {
   React.useEffect(() => {
     const links = [
       'https://cdn.jsdelivr.net/npm/@fullcalendar/daygrid@6.1.19/main.min.css',

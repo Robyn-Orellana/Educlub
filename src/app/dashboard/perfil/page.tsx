@@ -2,6 +2,8 @@ import React from 'react';
 import { getEnrollmentsForUser, getTutorAssignments } from '../../../lib/db';
 import { getServerSession } from '../../../lib/session';
 
+type SimpleCourse = { id: number; code: string; name: string };
+
 export default async function Perfil() {
   // Obtener la sesión actual
   const session = await getServerSession();
@@ -16,8 +18,8 @@ export default async function Perfil() {
   }
   
   const userId = session.userId;
-  const enrollments = await getEnrollmentsForUser(userId);
-  const tutorAssignments = await getTutorAssignments(userId);
+  const enrollments = (await getEnrollmentsForUser(userId)) as SimpleCourse[];
+  const tutorAssignments = (await getTutorAssignments(userId)) as SimpleCourse[];
 
   return (
     <div>
@@ -37,7 +39,7 @@ export default async function Perfil() {
             <p className="text-gray-500">No estás inscrito en cursos.</p>
           ) : (
             <ul className="space-y-2">
-              {enrollments.map((c: any) => (
+              {enrollments.map((c: SimpleCourse) => (
                 <li key={c.id} className="text-sm text-gray-700">{c.code} — {c.name}</li>
               ))}
             </ul>
@@ -50,7 +52,7 @@ export default async function Perfil() {
             <p className="text-gray-500">No estás asignado como tutor a cursos.</p>
           ) : (
             <ul className="space-y-2">
-              {tutorAssignments.map((c: any) => (
+              {tutorAssignments.map((c: SimpleCourse) => (
                 <li key={c.id} className="text-sm text-gray-700">{c.code} — {c.name}</li>
               ))}
             </ul>

@@ -50,12 +50,13 @@ export async function POST(req: NextRequest) {
     `;
     const r = rows?.[0];
     return NextResponse.json({ ok: true, user: r });
-  } catch (err: any) {
-    const msg = (err?.message || '').toLowerCase();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const msg = message.toLowerCase();
     if (msg.includes('23505') || msg.includes('exists')) {
       return NextResponse.json({ ok: false, error: 'El correo ya existe' }, { status: 409 });
     }
-    console.error('Error en /api/register:', err?.message || err);
+    console.error('Error en /api/register:', message);
     return NextResponse.json({ ok: false, error: 'Error interno' }, { status: 500 });
   }
 }

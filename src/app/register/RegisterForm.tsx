@@ -46,8 +46,9 @@ export default function RegisterForm({ courses }: { courses: Course[] }) {
       if (!res.ok) throw new Error(data.error || 'Error al registrar');
       setSuccess('Cuenta creada correctamente. Ahora puedes iniciar sesión.');
       setTimeout(() => router.push('/login'), 1200);
-    } catch (err: any) {
-      setError(err.message || 'Error desconocido');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error desconocido';
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -61,7 +62,7 @@ export default function RegisterForm({ courses }: { courses: Course[] }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <label className="block text-sm mb-1">Rol</label>
-          <select value={role} onChange={(e) => setRole(e.target.value as any)} className="w-full border rounded px-3 py-2">
+          <select value={role} onChange={(e) => setRole(e.target.value as 'student' | 'tutor')} className="w-full border rounded px-3 py-2">
             <option value="student">Estudiante</option>
             <option value="tutor">Tutor</option>
           </select>

@@ -13,20 +13,26 @@ type LoginRow = {
   expires_at: string;
 };
 
+type LoginBody = {
+  email?: string;
+  password?: string;
+  remember?: boolean;
+};
+
 export async function POST(req: NextRequest) {
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '0.0.0.0';
   const ua = req.headers.get('user-agent') || 'unknown';
 
-  let body: any;
+  let body: LoginBody;
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ ok: false, error: 'Solicitud inválida' }, { status: 400 });
   }
 
-  const email = (body?.email || '').toString().trim();
-  const password = (body?.password || '').toString();
-  const remember = Boolean(body?.remember);
+  const email = (body.email ?? '').toString().trim();
+  const password = (body.password ?? '').toString();
+  const remember = Boolean(body.remember);
 
   if (!email || !password) {
     return NextResponse.json({ ok: false, error: 'Email y contraseña requeridos' }, { status: 400 });

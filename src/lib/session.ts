@@ -44,7 +44,7 @@ export async function getServerSession(): Promise<ServerSession> {
       return defaultSession;
     }
 
-    const row = rows[0] as any;
+    const row = rows[0] as { user_id: number; first_name: string; last_name: string; email: string; role: string; expires_at?: string };
     return {
       token: sessionToken,
       userId: row.user_id,

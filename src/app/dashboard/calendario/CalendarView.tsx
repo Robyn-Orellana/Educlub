@@ -3,6 +3,7 @@
 import React from 'react';
 import { useState } from 'react';
 import FullCalendar from '@fullcalendar/react'; // requires installation
+import type { EventClickArg } from '@fullcalendar/core';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
@@ -42,7 +43,7 @@ export default function CalendarView({ sessions }: { sessions: TutorSession[] })
           displayEventTime={true}
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
           events={events}
-          eventClick={(info: any) => {
+          eventClick={(info: EventClickArg) => {
             setSelected(info.event.extendedProps as TutorSession);
           }}
           height="auto"

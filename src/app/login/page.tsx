@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 
@@ -13,6 +13,32 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const search = useSearchParams();
+
+  // Registro inline (sin redirigir a /register)
+  const [showSignup, setShowSignup] = useState(false);
+  const [role, setRole] = useState<'student' | 'tutor'>('student');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [signupEmail, setSignupEmail] = useState('');
+  const [signupPassword, setSignupPassword] = useState('');
+  const [signupLoading, setSignupLoading] = useState(false);
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [signupSuccess, setSignupSuccess] = useState<string | null>(null);
+  const [courses, setCourses] = useState<Array<{id:number; code:string; name:string}>>([]);
+  const [selectedEnrollCourses, setSelectedEnrollCourses] = useState<number[]>([]);
+  const [selectedTutorCourses, setSelectedTutorCourses] = useState<number[]>([]);
+
+  useEffect(() => {
+    // Cargar cursos cuando se abra el formulario o al montar
+    async function loadCourses() {
+      try {
+        const res = await fetch('/api/courses');
+        const data = await res.json();
+        if (res.ok && data?.courses) setCourses(data.courses);
+      } catch {}
+    }
+    loadCourses();
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -38,10 +64,53 @@ export default function LoginPage() {
   const next = search.get('next');
   router.push(next && next.startsWith('/') ? next : '/dashboard');
       router.refresh();
-    } catch (err: any) {
-      setError(err.message || 'Ocurrió un error al iniciar sesión');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Ocurrió un error al iniciar sesión';
+      setError(message);
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleSignup(e: FormEvent) {
+    e.preventDefault();
+    setSignupError(null);
+    setSignupSuccess(null);
+    setSignupLoading(true);
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role,
+          first_name: firstName,
+          last_name: lastName,
+          email: signupEmail,
+          password: signupPassword,
+          enroll_course_ids: role === 'student' ? selectedEnrollCourses : [],
+          tutor_course_ids: role === 'tutor' ? selectedTutorCourses : [],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al registrar');
+  // Prellenar campos de login y cerrar el formulario de registro
+  setEmail(signupEmail);
+  setPassword(signupPassword);
+  // Resetear y ocultar el formulario de registro
+  setRole('student');
+  setFirstName('');
+  setLastName('');
+  setSignupEmail('');
+  setSignupPassword('');
+  setSelectedEnrollCourses([]);
+  setSelectedTutorCourses([]);
+  setSignupSuccess(null);
+  setShowSignup(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Error desconocido';
+      setSignupError(message);
+    } finally {
+      setSignupLoading(false);
     }
   }
 
@@ -153,22 +222,174 @@ export default function LoginPage() {
               >
                 {isLoading ? 'Iniciando sesión...' : 'Entrar'}
               </button>
+              <button 
+                type="button"
+                onClick={() => setShowSignup(s => !s)}
+                className="w-full border border-slate-200 rounded-lg py-3 bg-white hover:bg-slate-50"
+                disabled={isLoading}
+              >
+                {showSignup ? 'Ocultar creación de cuenta' : 'Crear nueva cuenta'}
+              </button>
             </div>
 
-            <div className="flex items-center gap-3 mt-4">
-              <hr className="flex-1 border-slate-200" />
-              <span className="text-sm text-slate-400">o</span>
-              <hr className="flex-1 border-slate-200" />
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
-             
-            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4"></div>
 
             <p className="text-xs text-slate-400 mt-4">
               Al continuar aceptas las políticas de uso y privacidad de la universidad.
             </p>
           </form>
+
+          {showSignup && (
+            <div className="mt-8 border-t pt-6">
+              <h3 className="text-lg font-semibold mb-3">Crear nueva cuenta</h3>
+              {signupError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4 text-sm">
+                  {signupError}
+                </div>
+              )}
+              {signupSuccess && (
+                <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">
+                  {signupSuccess}
+                </div>
+              )}
+              <form onSubmit={handleSignup} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Rol</label>
+                    <select
+                      className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-violet-200"
+                      value={role}
+                      onChange={(e) => setRole(e.target.value as 'student' | 'tutor')}
+                      disabled={signupLoading}
+                    >
+                      <option value="student">Estudiante</option>
+                      <option value="tutor">Tutor</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Correo</label>
+                    <input
+                      className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-violet-200"
+                      type="email"
+                      value={signupEmail}
+                      onChange={(e) => setSignupEmail(e.target.value)}
+                      required
+                      disabled={signupLoading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Nombre</label>
+                    <input
+                      className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-violet-200"
+                      value={firstName}
+                      onChange={(e) => setFirstName(e.target.value)}
+                      required
+                      disabled={signupLoading}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Apellido</label>
+                    <input
+                      className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-violet-200"
+                      value={lastName}
+                      onChange={(e) => setLastName(e.target.value)}
+                      required
+                      disabled={signupLoading}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm text-slate-600 mb-1">Contraseña</label>
+                  <input
+                    className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-violet-200"
+                    type="password"
+                    value={signupPassword}
+                    onChange={(e) => setSignupPassword(e.target.value)}
+                    required
+                    disabled={signupLoading}
+                  />
+                </div>
+                {/* Selección de cursos según rol */}
+                {role === 'student' && (
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Cursos a inscribirse</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-auto border border-slate-200 rounded-lg p-3">
+                      {courses.map(c => {
+                        const checked = selectedEnrollCourses.includes(c.id);
+                        return (
+                          <label key={`enroll-${c.id}`} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setSelectedEnrollCourses(prev => e.target.checked
+                                  ? [...prev, c.id]
+                                  : prev.filter(id => id !== c.id)
+                                );
+                              }}
+                              disabled={signupLoading}
+                            />
+                            <span>{c.code} · {c.name}</span>
+                          </label>
+                        );
+                      })}
+                      {courses.length === 0 && (
+                        <span className="text-xs text-slate-400">No hay cursos disponibles</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {role === 'tutor' && (
+                  <div>
+                    <label className="block text-sm text-slate-600 mb-1">Cursos a tutorizar</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-60 overflow-auto border border-slate-200 rounded-lg p-3">
+                      {courses.map(c => {
+                        const checked = selectedTutorCourses.includes(c.id);
+                        return (
+                          <label key={`tutor-${c.id}`} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setSelectedTutorCourses(prev => e.target.checked
+                                  ? [...prev, c.id]
+                                  : prev.filter(id => id !== c.id)
+                                );
+                              }}
+                              disabled={signupLoading}
+                            />
+                            <span>{c.code} · {c.name}</span>
+                          </label>
+                        );
+                      })}
+                      {courses.length === 0 && (
+                        <span className="text-xs text-slate-400">No hay cursos disponibles</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    type="submit"
+                    className="bg-violet-600 hover:bg-violet-700 text-white px-6 py-3 rounded-lg disabled:opacity-60"
+                    disabled={signupLoading}
+                  >
+                    {signupLoading ? 'Creando...' : 'Crear cuenta'}
+                  </button>
+                  <button
+                    type="button"
+                    className="border px-6 py-3 rounded-lg"
+                    onClick={() => setShowSignup(false)}
+                    disabled={signupLoading}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+                <p className="text-xs text-slate-400">Nota: Puedes cambiar tus cursos luego desde tu perfil.</p>
+              </form>
+            </div>
+          )}
         </main>
       </div>
     </div>
