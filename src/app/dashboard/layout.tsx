@@ -1,5 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
+import LogoutButton from '../components/LogoutButton';
 
 export const metadata = {
   title: 'EduClub — Dashboard',
@@ -36,7 +37,43 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ))}
           </nav>
 
-          <div className="mt-auto hidden md:block text-xs text-gray-400">EduClub · v1.0</div>
+          <div className="mt-auto w-full flex flex-col gap-2">
+            <div className="hidden md:block w-full border-t border-gray-100 pt-4">
+              <Link 
+                href="/dashboard/perfil"
+                className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50"
+              >
+                <div className="w-8 h-8 bg-violet-100 rounded-full flex items-center justify-center text-violet-600 font-medium text-sm">U</div>
+                <div>
+                  <div className="text-xs font-medium">Usuario</div>
+                  <div className="text-xs text-gray-400">Estudiante</div>
+                </div>
+              </Link>
+            </div>
+            <div className="w-full flex flex-col gap-1">
+              <Link 
+                href="/dashboard/perfil"
+                className="flex items-center md:gap-3 px-2 py-2 rounded-lg hover:bg-gray-50"
+              >
+                <span className="text-lg">⚙️</span>
+                <span className="hidden md:inline-block text-sm text-gray-700">Configuración</span>
+              </Link>
+              
+              {/* Botón de cerrar sesión */}
+              <div className="flex items-center md:gap-3 px-2 py-2 rounded-lg hover:bg-red-50">
+                <span className="text-lg">🚪</span>
+                <div className="hidden md:block w-full">
+                  <LogoutButton className="text-sm text-gray-700 hover:text-red-600 w-full text-left">
+                    Cerrar sesión
+                  </LogoutButton>
+                </div>
+                <div className="md:hidden">
+                  <LogoutButton className="text-red-600">🔴</LogoutButton>
+                </div>
+              </div>
+            </div>
+            <div className="hidden md:block text-xs text-gray-400 mt-4">EduClub · v1.0</div>
+          </div>
         </div>
       </aside>
 

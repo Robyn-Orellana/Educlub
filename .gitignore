@@ -43,3 +43,23 @@ next-env.d.ts
 .vercel
 
 pwtutoria_schema_seed_updated.sql
+
+# OS-specific
+Thumbs.db
+
+# Local database files and dumps (keep tracked schema under /sql)
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.bak
+*.backup
+*.dump
+/*.sql
+!sql/*.sql
+!sql/**/*.sql
+
+# Local IDE settings
+.vscode/
+.idea/
