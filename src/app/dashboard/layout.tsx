@@ -14,6 +14,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { href: '/dashboard/notificaciones', label: 'Notificaciones', icon: '🔔' },
     { href: '/dashboard/foros', label: 'Foros', icon: '💬' },
     { href: '/dashboard/recursos', label: 'Recursos', icon: '📎' },
+    { href: '/dashboard/calificaciones', label: 'Calificaciones', icon: '⭐' },
     { href: '/dashboard/perfil', label: 'Perfil', icon: '👤' },
   ];
 

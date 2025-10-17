@@ -20,6 +20,30 @@ export function sql<T = Record<string, unknown>>(strings: TemplateStringsArray, 
   return client(strings, ...values);
 }
 
+// Cache simple para existencia de columnas (evita chequear en cada llamada)
+const _columnExistsCache = new Map<string, boolean>();
+
+async function columnExists(table: string, column: string, schema = 'public'): Promise<boolean> {
+  const key = `${schema}.${table}.${column}`;
+  const cached = _columnExistsCache.get(key);
+  if (cached !== undefined) return cached;
+  try {
+    const rows = await sql<{ exists: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = ${schema} AND table_name = ${table} AND column_name = ${column}
+      ) AS exists;
+    `;
+    const exists = rows?.[0]?.exists === true;
+    _columnExistsCache.set(key, exists);
+    return exists;
+  } catch {
+    // Si falla el chequeo, asumir que no existe para ser conservadores
+    _columnExistsCache.set(key, false);
+    return false;
+  }
+}
+
 export type Course = {
   id: number;
   code: string;
@@ -353,6 +377,170 @@ export async function setTutorCourses(userId: number, courseIds: number[]) {
     return await getTutorCourses(userId);
   } catch (error) {
     console.error('Error al establecer cursos del tutor:', error);
+    return [];
+  }
+}
+
+// ===============
+// Ratings (calificaciones)
+// ===============
+
+export type Rating = {
+  id: number;
+  rater_id: number;
+  ratee_id: number;
+  session_id: number | null;
+  reservation_id?: number | null;
+  score: number; // 1..5
+  comment: string | null;
+  created_at: string;
+};
+
+export async function createOrUpdateRating(params: { raterId: number; rateeId: number; sessionId?: number | null; reservationId?: number | null; score: number; comment?: string | null; }): Promise<Rating | null> {
+  const { raterId, rateeId, sessionId = null, reservationId = null, score, comment = null } = params;
+  try {
+    // Validaciones básicas
+    if (!Number.isFinite(raterId) || !Number.isFinite(rateeId)) throw new Error('Usuarios inválidos');
+    if (raterId === rateeId) throw new Error('No puedes calificarte a ti mismo');
+    if (!Number.isFinite(score) || score < 1 || score > 5) throw new Error('Puntaje inválido');
+
+    // Soportar esquemas viejos donde aún no existe la columna reservation_id
+    const hasReservationCol = await columnExists('ratings', 'reservation_id');
+  const hasLegacyTutorCol = await columnExists('ratings', 'tutor_id');
+  const hasLegacyStudentCol = await columnExists('ratings', 'student_id');
+    const hasCourseCol = await columnExists('ratings', 'course_id');
+    // Si existe en algún entorno, no la vamos a usar; la migración de limpieza la elimina.
+
+    // 1) Intentar UPDATE existente (soporta session_id NULL)
+    const updateRows = hasReservationCol
+      ? await sql<Rating>`
+          UPDATE ratings
+          SET score = ${score}::int,
+              comment = ${comment}::text,
+              created_at = now(),
+              reservation_id = ${reservationId}::bigint
+              ${hasCourseCol ? sql`` : sql``}
+          WHERE rater_id = ${raterId}::bigint
+            AND ratee_id = ${rateeId}::bigint
+            AND session_id IS NOT DISTINCT FROM ${sessionId}::bigint
+          RETURNING id, rater_id, ratee_id, session_id, reservation_id, score, comment, created_at;
+        `
+      : await sql<Rating>`
+          UPDATE ratings
+          SET score = ${score}::int,
+              comment = ${comment}::text,
+              created_at = now()
+          WHERE rater_id = ${raterId}::bigint
+            AND ratee_id = ${rateeId}::bigint
+            AND session_id IS NOT DISTINCT FROM ${sessionId}::bigint
+          RETURNING id, rater_id, ratee_id, session_id,
+                    NULL::bigint AS reservation_id,
+                    score, comment, created_at;
+        `;
+
+    if (updateRows && updateRows.length > 0) {
+      return updateRows[0];
+    }
+
+    // 2) Si no existe, INSERT según el esquema
+    let insertRows: Rating[];
+    if (hasReservationCol) {
+      if (hasLegacyTutorCol && hasLegacyStudentCol) {
+        insertRows = await sql<Rating>`
+          INSERT INTO ratings (rater_id, ratee_id, session_id, reservation_id, score, comment, tutor_id, student_id)
+          VALUES (${raterId}::bigint, ${rateeId}::bigint, ${sessionId}::bigint, ${reservationId}::bigint, ${score}::int, ${comment}::text, ${rateeId}::bigint, ${raterId}::bigint)
+          RETURNING id, rater_id, ratee_id, session_id, reservation_id, score, comment, created_at;
+        `;
+      } else if (hasLegacyTutorCol) {
+        insertRows = await sql<Rating>`
+          INSERT INTO ratings (rater_id, ratee_id, session_id, reservation_id, score, comment, tutor_id)
+          VALUES (${raterId}::bigint, ${rateeId}::bigint, ${sessionId}::bigint, ${reservationId}::bigint, ${score}::int, ${comment}::text, ${rateeId}::bigint)
+          RETURNING id, rater_id, ratee_id, session_id, reservation_id, score, comment, created_at;
+        `;
+      } else if (hasLegacyStudentCol) {
+        insertRows = await sql<Rating>`
+          INSERT INTO ratings (rater_id, ratee_id, session_id, reservation_id, score, comment, student_id)
+          VALUES (${raterId}::bigint, ${rateeId}::bigint, ${sessionId}::bigint, ${reservationId}::bigint, ${score}::int, ${comment}::text, ${raterId}::bigint)
+          RETURNING id, rater_id, ratee_id, session_id, reservation_id, score, comment, created_at;
+        `;
+      } else {
+        insertRows = await sql<Rating>`
+          INSERT INTO ratings (rater_id, ratee_id, session_id, reservation_id, score, comment)
+          VALUES (${raterId}::bigint, ${rateeId}::bigint, ${sessionId}::bigint, ${reservationId}::bigint, ${score}::int, ${comment}::text)
+          RETURNING id, rater_id, ratee_id, session_id, reservation_id, score, comment, created_at;
+        `;
+      }
+    } else {
+      if (hasLegacyTutorCol && hasLegacyStudentCol) {
+        insertRows = await sql<Rating>`
+          INSERT INTO ratings (rater_id, ratee_id, session_id, score, comment, tutor_id, student_id)
+          VALUES (${raterId}::bigint, ${rateeId}::bigint, ${sessionId}::bigint, ${score}::int, ${comment}::text, ${rateeId}::bigint, ${raterId}::bigint)
+          RETURNING id, rater_id, ratee_id, session_id,
+                    NULL::bigint AS reservation_id,
+                    score, comment, created_at;
+        `;
+      } else if (hasLegacyTutorCol) {
+        insertRows = await sql<Rating>`
+          INSERT INTO ratings (rater_id, ratee_id, session_id, score, comment, tutor_id)
+          VALUES (${raterId}::bigint, ${rateeId}::bigint, ${sessionId}::bigint, ${score}::int, ${comment}::text, ${rateeId}::bigint)
+          RETURNING id, rater_id, ratee_id, session_id,
+                    NULL::bigint AS reservation_id,
+                    score, comment, created_at;
+        `;
+      } else if (hasLegacyStudentCol) {
+        insertRows = await sql<Rating>`
+          INSERT INTO ratings (rater_id, ratee_id, session_id, score, comment, student_id)
+          VALUES (${raterId}::bigint, ${rateeId}::bigint, ${sessionId}::bigint, ${score}::int, ${comment}::text, ${raterId}::bigint)
+          RETURNING id, rater_id, ratee_id, session_id,
+                    NULL::bigint AS reservation_id,
+                    score, comment, created_at;
+        `;
+      } else {
+        insertRows = await sql<Rating>`
+          INSERT INTO ratings (rater_id, ratee_id, session_id, score, comment)
+          VALUES (${raterId}::bigint, ${rateeId}::bigint, ${sessionId}::bigint, ${score}::int, ${comment}::text)
+          RETURNING id, rater_id, ratee_id, session_id,
+                    NULL::bigint AS reservation_id,
+                    score, comment, created_at;
+        `;
+      }
+    }
+    return insertRows?.[0] ?? null;
+  } catch (error) {
+    console.error('Error al crear/actualizar calificación:', error);
+    return null;
+  }
+}
+
+export async function getUserRatingSummary(userId: number): Promise<{ avg: number; total: number } | null> {
+  try {
+    const rows = await sql<{ avg: number; total: number }>`
+      SELECT COALESCE(ROUND(AVG(score)::numeric, 2), 0)::float AS avg, COUNT(*)::int AS total
+      FROM ratings
+      WHERE ratee_id = ${userId};
+    `;
+    return rows?.[0] ?? { avg: 0, total: 0 };
+  } catch (error) {
+    console.error('Error al obtener resumen de calificaciones:', error);
+    return null;
+  }
+}
+
+export async function listRecentRatingsForUser(userId: number, limit = 10): Promise<Array<Rating & { rater_name: string }>> {
+  try {
+    type Row = Rating & { rater_name: string };
+    const rows = await sql<Row>`
+      SELECT r.id, r.rater_id, r.ratee_id, r.session_id, r.score, r.comment, r.created_at,
+             (u.first_name || ' ' || u.last_name) AS rater_name
+      FROM ratings r
+      JOIN users u ON u.id = r.rater_id
+      WHERE r.ratee_id = ${userId}
+      ORDER BY r.created_at DESC
+      LIMIT ${limit};
+    `;
+    return rows;
+  } catch (error) {
+    console.error('Error al listar calificaciones:', error);
     return [];
   }
 }
