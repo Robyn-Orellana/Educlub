@@ -70,7 +70,11 @@ export default function NotificationsBell() {
   // Resolve join URLs for session_scheduled notifications
   useEffect(() => {
     (async () => {
-      const ids = Array.from(new Set(items.map((n) => Number((n.payload_json ?? {})['session_id'] as any)).filter((n): n is number => Number.isFinite(n))));
+      const ids = Array.from(new Set(items.map((n) => {
+        const sidRaw = (n.payload_json ?? {})['session_id'] as unknown;
+        const sid = typeof sidRaw === 'string' || typeof sidRaw === 'number' ? Number(sidRaw) : NaN;
+        return sid;
+      }).filter((n): n is number => Number.isFinite(n))));
       if (ids.length === 0) { setJoinUrls({}); return; }
       const map: Record<number, string> = {};
       for (const id of ids) {

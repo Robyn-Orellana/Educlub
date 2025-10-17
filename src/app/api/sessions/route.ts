@@ -179,7 +179,17 @@ export async function POST(req: NextRequest) {
       SELECT id AS session_id, scheduled_at, duration_min, platform, join_url, status, room_name, meet_link
       FROM tutoring_sessions WHERE id = ${r.session_id};
     `;
-    let d = details?.[0] as { session_id: number; scheduled_at: string; duration_min: number; platform: string; join_url: string | null; status: string; room_name?: string | null; meet_link?: string | null } | undefined;
+    type SessionDetails = {
+      session_id: number;
+      scheduled_at: string;
+      duration_min: number;
+      platform: string;
+      join_url: string | null;
+      status: string;
+      room_name?: string | null;
+      meet_link?: string | null;
+    };
+    let d = details?.[0] as SessionDetails | undefined;
 
     const isPlaceholder = d && d.join_url && /https?:\/\/meet\.example\//i.test(d.join_url);
     if (d && (!d.join_url || !d.join_url.trim() || isPlaceholder)) {
@@ -199,7 +209,7 @@ export async function POST(req: NextRequest) {
         SELECT id AS session_id, scheduled_at, duration_min, platform, join_url, status, room_name, meet_link
         FROM tutoring_sessions WHERE id = ${r.session_id};
       `;
-      d = details?.[0] as any;
+      d = details?.[0] as SessionDetails | undefined;
     }
     // Adjuntar host/guest si vinieron en v2
   const sessionPayload: Record<string, unknown> = { ...(d ?? {}) };

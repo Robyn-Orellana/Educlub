@@ -25,7 +25,7 @@ export default function ProfileEditor() {
         if (!active) return;
         if (json.ok) setProfile(json.profile as Profile);
         else setError(json.error || 'Error al cargar perfil');
-      } catch (e) {
+      } catch (_e) {
         if (active) setError('Error al cargar perfil');
       } finally {
         if (active) setLoading(false);
@@ -34,8 +34,8 @@ export default function ProfileEditor() {
     return () => { active = false };
   }, []);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function onSubmit(_e: React.FormEvent) {
+    _e.preventDefault();
     if (!profile) return;
     setSaving(true);
     setError(null);
