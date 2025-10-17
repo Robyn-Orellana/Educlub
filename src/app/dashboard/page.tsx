@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import { getServerSession } from '../../lib/session';
 import LogoutButton from '../components/LogoutButton';
 
+export const dynamic = 'force-dynamic';
+
 export default async function DashboardHome() {
   const session = await getServerSession();
   if (!session.isAuthenticated) {

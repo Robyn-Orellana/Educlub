@@ -1,10 +1,24 @@
 import { neon } from '@neondatabase/serverless';
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL no configurada');
+type NeonTag = ReturnType<typeof neon>;
+let _sql: NeonTag | null = null;
+
+function getSqlClient(): NeonTag {
+  if (_sql) return _sql;
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    // Defer error until actual query usage, not at import time
+    throw new Error('DATABASE_URL no configurada');
+  }
+  _sql = neon(url);
+  return _sql;
 }
 
-export const sql = neon(process.env.DATABASE_URL);
+// Tagged template proxy with generic row typing
+export function sql<T = Record<string, unknown>>(strings: TemplateStringsArray, ...values: unknown[]): Promise<T[]> {
+  const client = getSqlClient() as unknown as (s: TemplateStringsArray, ...v: unknown[]) => Promise<T[]>;
+  return client(strings, ...values);
+}
 
 export type Course = {
   id: number;
@@ -17,13 +31,25 @@ export type Course = {
   promedio_estrellas?: number;
 };
 
+export type TutorSession = {
+  session_id: number;
+  course_code: string;
+  course_name: string;
+  scheduled_at: string;
+  duration_min: number;
+  platform: string;
+  status: string;
+  total_reservas: number;
+};
+
 /**
  * Obtiene el primer usuario de la base de datos (para propósitos de demostración)
  * @returns Primer usuario encontrado o null si no hay usuarios
  */
 export async function getFirstUser() {
   try {
-    const users = await sql`
+    type Row = { id: number; email: string; first_name: string; last_name: string; created_at: string; role: string };
+    const users = await sql<Row>`
       SELECT 
         u.id, u.email, u.first_name, u.last_name, u.created_at,
         r.name as role
@@ -47,7 +73,8 @@ export async function getFirstUser() {
  */
 export async function getEnrollmentsForUser(userId: number) {
   try {
-    return await sql`
+    type Row = { id: number; code: string; name: string; description: string | null; enrolled_at: string };
+    return await sql<Row>`
       SELECT 
         c.id, c.code, c.name, c.description,
         e.enrolled_at
@@ -69,7 +96,8 @@ export async function getEnrollmentsForUser(userId: number) {
  */
 export async function getTutorAssignments(userId: number) {
   try {
-    return await sql`
+    type Row = { id: number; code: string; name: string; description: string | null; assigned_at: string };
+    return await sql<Row>`
       SELECT 
         c.id, c.code, c.name, c.description,
         tc.assigned_at
@@ -90,7 +118,17 @@ export async function getTutorAssignments(userId: number) {
  */
 export async function getCoursesOverview(): Promise<Course[]> {
   try {
-    const result = await sql`
+    type Row = {
+      id: number;
+      code: string;
+      name: string;
+      description: string | null;
+      tutor: string | null;
+      inscritos: number;
+      sesiones: number;
+      promedio_estrellas: number;
+    };
+    const result = await sql<Row>`
       SELECT 
         c.id,
         c.code,
@@ -137,12 +175,12 @@ export async function getCoursesOverview(): Promise<Course[]> {
     `;
     
     // Asegurar que la respuesta tiene la estructura correcta
-    return result.map(row => ({
+    return result.map((row) => ({
       id: row.id,
       code: row.code,
       name: row.name,
-      description: row.description,
-      tutor: row.tutor,
+      description: row.description ?? undefined,
+      tutor: row.tutor ?? undefined,
       inscritos: row.inscritos,
       sesiones: row.sesiones,
       promedio_estrellas: row.promedio_estrellas
@@ -160,9 +198,9 @@ export async function getCoursesOverview(): Promise<Course[]> {
  * @param to ISO string fin (incluido)
  * @returns Lista de sesiones con datos preparados para el calendario
  */
-export async function getSessionsForTutor(tutorId: number, from: string, to: string) {
+export async function getSessionsForTutor(tutorId: number, from: string, to: string): Promise<TutorSession[]> {
   try {
-    const rows = await sql/* sql */`
+    const rows = await sql<TutorSession>/* sql */`
       SELECT 
         s.id AS session_id,
         c.code AS course_code,
@@ -180,7 +218,7 @@ export async function getSessionsForTutor(tutorId: number, from: string, to: str
       GROUP BY s.id, c.code, c.name, s.scheduled_at, s.duration_min, s.platform, s.status
       ORDER BY s.scheduled_at ASC;
     `;
-    return rows;
+    return rows as TutorSession[];
   } catch (error) {
     console.error('Error al obtener sesiones del tutor:', error);
     return [];
@@ -192,7 +230,7 @@ export async function getSessionsForTutor(tutorId: number, from: string, to: str
  */
 export async function getAllCourses() {
   try {
-    const rows = await sql/* sql */`
+    const rows = await sql<{ id: number; code: string; name: string }>`
       SELECT id, code, name
       FROM courses
       WHERE status = 'active'
@@ -201,6 +239,120 @@ export async function getAllCourses() {
     return rows;
   } catch (error) {
     console.error('Error al listar cursos:', error);
+    return [];
+  }
+}
+
+// ===============
+// Perfil de usuario
+// ===============
+
+export type UserProfile = {
+  id: number;
+  first_name: string;
+  last_name: string;
+  email: string;
+  role: string;
+  avatar_url: string | null;
+};
+
+export async function getUserProfile(userId: number): Promise<UserProfile | null> {
+  try {
+    const rows = await sql<UserProfile>`
+      SELECT u.id::bigint as id, u.first_name, u.last_name, u.email, r.name AS role, u.avatar_url
+      FROM users u
+      JOIN roles r ON r.id = u.role_id
+      WHERE u.id = ${userId}
+      LIMIT 1;
+    `;
+    return rows?.[0] ?? null;
+  } catch (error) {
+    console.error('Error al obtener perfil de usuario:', error);
+    return null;
+  }
+}
+
+export type UpdateUserProfileInput = {
+  first_name?: string;
+  last_name?: string;
+  role?: 'student' | 'tutor';
+  avatar_url?: string | null;
+};
+
+export async function updateUserProfile(userId: number, data: UpdateUserProfileInput): Promise<UserProfile | null> {
+  try {
+    // Actualizar nombre y avatar si vienen
+    if (data.first_name !== undefined || data.last_name !== undefined || data.avatar_url !== undefined) {
+      await sql/* sql */`
+        UPDATE users
+        SET
+          first_name = COALESCE(${data.first_name}::text, first_name),
+          last_name  = COALESCE(${data.last_name}::text, last_name),
+          avatar_url = COALESCE(${data.avatar_url}::text, avatar_url)
+        WHERE id = ${userId};
+      `;
+    }
+
+    // Actualizar rol si viene y es válido (student|tutor)
+    if (data.role) {
+      const roleRow = await sql<{ id: number }>`SELECT id FROM roles WHERE name = ${data.role} LIMIT 1;`;
+      const roleId = roleRow?.[0]?.id;
+      if (roleId) {
+        await sql/* sql */`
+          UPDATE users SET role_id = ${roleId} WHERE id = ${userId};
+        `;
+      }
+    }
+
+    return await getUserProfile(userId);
+  } catch (error) {
+    console.error('Error al actualizar perfil de usuario:', error);
+    return null;
+  }
+}
+
+// ===============
+// Cursos que imparte (tutor)
+// ===============
+
+export async function getTutorCourses(userId: number) {
+  try {
+    const rows = await sql<{ id: number; code: string; name: string }>`
+      SELECT c.id, c.code, c.name
+      FROM tutor_courses tc
+      JOIN courses c ON c.id = tc.course_id
+      WHERE tc.tutor_id = ${userId}
+      ORDER BY c.code;
+    `;
+    return rows;
+  } catch (error) {
+    console.error('Error al listar cursos del tutor:', error);
+    return [];
+  }
+}
+
+export async function setTutorCourses(userId: number, courseIds: number[]) {
+  try {
+    // Normalizar a enteros únicos
+    const ids = Array.from(new Set(courseIds.map((n) => Number(n)).filter((n) => Number.isFinite(n))));
+
+    // Limpiar todos y reinsertar (más simple y consistente)
+    await sql/* sql */`
+      DELETE FROM tutor_courses WHERE tutor_id = ${userId};
+    `;
+
+    // Inserción simple por id (compatible con interpolación)
+    for (const cid of ids) {
+      await sql/* sql */`
+        INSERT INTO tutor_courses (tutor_id, course_id)
+        VALUES (${userId}, ${cid})
+        ON CONFLICT DO NOTHING;
+      `;
+    }
+
+    return await getTutorCourses(userId);
+  } catch (error) {
+    console.error('Error al establecer cursos del tutor:', error);
     return [];
   }
 }

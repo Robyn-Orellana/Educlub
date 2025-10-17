@@ -1,8 +1,12 @@
 import React from 'react';
-import { getEnrollmentsForUser, getTutorAssignments } from '../../../lib/db';
+import { getEnrollmentsForUser } from '../../../lib/db';
 import { getServerSession } from '../../../lib/session';
+import ProfileEditor from './ProfileEditor';
+import TutorCoursesManager from './TutorCoursesManager';
 
 type SimpleCourse = { id: number; code: string; name: string };
+
+export const dynamic = 'force-dynamic';
 
 export default async function Perfil() {
   // Obtener la sesión actual
@@ -19,7 +23,6 @@ export default async function Perfil() {
   
   const userId = session.userId;
   const enrollments = (await getEnrollmentsForUser(userId)) as SimpleCourse[];
-  const tutorAssignments = (await getTutorAssignments(userId)) as SimpleCourse[];
 
   return (
     <div>
@@ -32,9 +35,14 @@ export default async function Perfil() {
         </div>
       </div>
 
-      <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="bg-white rounded-lg p-4 shadow-sm lg:col-span-2">
+          <h2 className="text-lg font-semibold mb-3">Editar perfil</h2>
+          <ProfileEditor />
+        </div>
+
         <div className="bg-white rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold mb-2">Cursos inscritos</h2>
+          <h2 className="text-lg font-semibold mb-3">Cursos inscritos</h2>
           {enrollments.length === 0 ? (
             <p className="text-gray-500">No estás inscrito en cursos.</p>
           ) : (
@@ -45,19 +53,12 @@ export default async function Perfil() {
             </ul>
           )}
         </div>
+      </section>
 
-        <div className="bg-white rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold mb-2">Asignaciones como tutor</h2>
-          {tutorAssignments.length === 0 ? (
-            <p className="text-gray-500">No estás asignado como tutor a cursos.</p>
-          ) : (
-            <ul className="space-y-2">
-              {tutorAssignments.map((c: SimpleCourse) => (
-                <li key={c.id} className="text-sm text-gray-700">{c.code} — {c.name}</li>
-              ))}
-            </ul>
-          )}
-        </div>
+      <section className="mt-6 bg-white rounded-lg p-4 shadow-sm">
+        <h2 className="text-lg font-semibold mb-2">Inscribirse para impartir cursos</h2>
+        <p className="text-sm text-gray-600 mb-3">Selecciona los cursos que deseas impartir como tutor.</p>
+        <TutorCoursesManager />
       </section>
 
       <div className="mt-6">
