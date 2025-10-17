@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '../../../lib/db';
 import { getServerSession } from '../../../lib/session';
+import { createJitsiRoomName, jitsiLink } from '../../../lib/jitsi';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -76,27 +77,63 @@ export async function POST(req: NextRequest) {
     const has_v1 = Boolean(check?.[0]?.has_v1);
 
     if (!has_v2 && !has_v1) {
-      // Opción de fallback a stub si está permitido por env
-      const allowStub = String(process.env.ALLOW_STUB_SCHEDULING || '').toLowerCase() === 'true' || String(process.env.ALLOW_STUB_SCHEDULING) === '1';
-      if (allowStub) {
-        const link = join_url || generateStubMeetLink();
-        return NextResponse.json({
-          ok: true,
-          session: {
-            session_id: 0,
-            scheduled_at: scheduled_at.toISOString(),
-            duration_min,
-            platform,
-            join_url: link,
-            status: 'scheduled',
-            host_id: actor_is_host ? session.userId : counterparty_user_id,
-            guest_id: actor_is_host ? counterparty_user_id : session.userId,
-          },
-          reservation_id: null,
-          warning: 'DB migration faltante: usando stub sin persistencia. Aplique sql/scheduling_functions.sql.'
-        });
+      // Fallback con persistencia directa y Jitsi real
+      const courseRows = await sql<{ id: number; name: string }>`SELECT id, name FROM courses WHERE code = ${course_code} LIMIT 1;`;
+      const course = courseRows?.[0];
+      if (!course) return NextResponse.json({ ok: false, error: `Curso ${course_code} no existe` }, { status: 400 });
+      const room = createJitsiRoomName('tutor');
+      const link = jitsiLink(room);
+      const host_id = actor_is_host ? session.userId : counterparty_user_id;
+      const guest_id = actor_is_host ? counterparty_user_id : session.userId;
+      const inserted = await sql<{ id: number }>`
+        INSERT INTO tutoring_sessions(
+          course_id, tutor_id, scheduled_at, duration_min, platform,
+          join_url, room_name, meet_link, status, starts_at, ends_at
+        ) VALUES (
+          ${course.id}, ${host_id}, ${scheduled_at.toISOString()}::timestamptz, ${duration_min}, ${platform},
+          ${link}, ${room}, ${link}, 'scheduled', ${scheduled_at.toISOString()}::timestamptz,
+          (${scheduled_at.toISOString()}::timestamptz + make_interval(mins => ${duration_min}))
+        ) RETURNING id;
+      `;
+      const sid = inserted?.[0]?.id;
+      if (!sid) return NextResponse.json({ ok: false, error: 'No se pudo crear la sesión (fallback)' }, { status: 500 });
+      if (body.create_reservation) {
+        await sql/* sql */`
+          INSERT INTO reservations(session_id, student_id, status)
+          VALUES (${sid}, ${guest_id}, 'reserved')
+          ON CONFLICT (session_id, student_id) DO UPDATE SET status = EXCLUDED.status;
+        `;
       }
-      return NextResponse.json({ ok: false, error: 'DB migration requerida: crea public.app_schedule_session_v2 o actualiza public.app_schedule_session (9 parámetros). Aplica sql/scheduling_functions.sql.' }, { status: 500 });
+      // Notificar al invitado
+      await sql/* sql */`
+        INSERT INTO notifications(user_id, type, payload_json)
+        VALUES (
+          ${guest_id}, 'session_scheduled',
+          jsonb_build_object(
+            'session_id', ${sid},
+            'course_code', ${course_code},
+            'course_name', ${course.name},
+            'scheduled_at', ${scheduled_at.toISOString()}::timestamptz,
+            'platform', ${platform},
+            'host_id', ${host_id},
+            'guest_id', ${guest_id}
+          )
+        );
+      `;
+      return NextResponse.json({
+        ok: true,
+        session: {
+          session_id: sid,
+          scheduled_at: scheduled_at.toISOString(),
+          duration_min,
+          platform,
+          join_url: link,
+          status: 'scheduled',
+          host_id,
+          guest_id,
+        },
+        reservation_id: body.create_reservation ? 1 : null
+      });
     }
 
     // 1) Usar la función disponible
@@ -137,12 +174,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'No se pudo crear la sesión' }, { status: 500 });
     }
 
-    // 2) Consultar detalles para obtener join_url, etc.
-    const details = await sql/* sql */`
-      SELECT id AS session_id, scheduled_at, duration_min, platform, join_url, status
+    // 2) Consultar detalles y asegurar Jitsi join_url si falta
+    let details = await sql/* sql */`
+      SELECT id AS session_id, scheduled_at, duration_min, platform, join_url, status, room_name, meet_link
       FROM tutoring_sessions WHERE id = ${r.session_id};
     `;
-  const d = details?.[0] as { session_id: number; scheduled_at: string; duration_min: number; platform: string; join_url: string | null; status: string } | undefined;
+    let d = details?.[0] as { session_id: number; scheduled_at: string; duration_min: number; platform: string; join_url: string | null; status: string; room_name?: string | null; meet_link?: string | null } | undefined;
+
+    const isPlaceholder = d && d.join_url && /https?:\/\/meet\.example\//i.test(d.join_url);
+    if (d && (!d.join_url || !d.join_url.trim() || isPlaceholder)) {
+      // Idempotente: si no hay join_url, generamos uno Jitsi y lo persistimos
+      const room = d.room_name && d.room_name.trim().length > 0 ? d.room_name : createJitsiRoomName('tutor');
+      const link = d.meet_link && d.meet_link.trim().length > 0 ? d.meet_link : jitsiLink(room);
+      await sql/* sql */`
+        UPDATE tutoring_sessions
+        SET room_name = ${room},
+            meet_link = ${link},
+            join_url  = ${link},
+            starts_at = COALESCE(starts_at, scheduled_at),
+            ends_at   = COALESCE(ends_at, scheduled_at + make_interval(mins => duration_min))
+        WHERE id = ${r.session_id};
+      `;
+      details = await sql/* sql */`
+        SELECT id AS session_id, scheduled_at, duration_min, platform, join_url, status, room_name, meet_link
+        FROM tutoring_sessions WHERE id = ${r.session_id};
+      `;
+      d = details?.[0] as any;
+    }
     // Adjuntar host/guest si vinieron en v2
   const sessionPayload: Record<string, unknown> = { ...(d ?? {}) };
   if (r?.host_id != null) (sessionPayload as Record<string, unknown>).host_id = r.host_id;
@@ -202,20 +260,32 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'Fechas inválidas' }, { status: 400 });
   }
   try {
-  type SessionRow = { session_id: number; scheduled_at: string; duration_min: number; platform: string; join_url: string | null; course_code: string; course_name: string; role: 'host' | 'guest' };
-  const rows = await sql<SessionRow>/* sql */`
+    type SessionRow = { session_id: number; scheduled_at: string; duration_min: number; platform: string; join_url: string | null; room_name: string | null; meet_link: string | null; course_code: string; course_name: string; role: 'host' | 'guest'; partner_id: number | null; partner_name: string | null };
+    const rows = await sql<SessionRow>/* sql */`
       WITH host AS (
         SELECT 
           s.id AS session_id,
           s.scheduled_at,
           s.duration_min,
           s.platform,
-          s.join_url,
+          COALESCE(s.meet_link, s.join_url) AS join_url,
+          s.room_name,
+          s.meet_link,
           c.code AS course_code,
           c.name AS course_name,
-          'host'::text AS role
+          'host'::text AS role,
+          -- partner: primer estudiante reservado
+          r1.student_id AS partner_id,
+          u1.first_name || ' ' || u1.last_name AS partner_name
         FROM tutoring_sessions s
         JOIN courses c ON c.id = s.course_id
+        LEFT JOIN LATERAL (
+          SELECT r.student_id FROM reservations r
+          WHERE r.session_id = s.id AND r.status <> 'canceled'
+          ORDER BY CASE WHEN r.status = 'reserved' THEN 0 ELSE 1 END, r.id
+          LIMIT 1
+        ) r1 ON TRUE
+        LEFT JOIN users u1 ON u1.id = r1.student_id
         WHERE s.tutor_id = ${session.userId}
           AND s.scheduled_at BETWEEN ${fromDate.toISOString()}::timestamptz AND ${toDate.toISOString()}::timestamptz
       ),
@@ -225,13 +295,18 @@ export async function GET(req: NextRequest) {
           s.scheduled_at,
           s.duration_min,
           s.platform,
-          s.join_url,
+          COALESCE(s.meet_link, s.join_url) AS join_url,
+          s.room_name,
+          s.meet_link,
           c.code AS course_code,
           c.name AS course_name,
-          'guest'::text AS role
+          'guest'::text AS role,
+          s.tutor_id AS partner_id,
+          u2.first_name || ' ' || u2.last_name AS partner_name
         FROM tutoring_sessions s
         JOIN reservations r ON r.session_id = s.id AND r.student_id = ${session.userId} AND r.status <> 'canceled'
         JOIN courses c ON c.id = s.course_id
+        LEFT JOIN users u2 ON u2.id = s.tutor_id
         WHERE s.scheduled_at BETWEEN ${fromDate.toISOString()}::timestamptz AND ${toDate.toISOString()}::timestamptz
       )
       SELECT * FROM host

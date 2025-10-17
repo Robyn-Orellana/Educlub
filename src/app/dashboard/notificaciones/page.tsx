@@ -16,6 +16,7 @@ export default function NotificationsPage() {
   const [userMap, setUserMap] = useState<Record<number, { name: string; email: string }>>({});
   const [statuses, setStatuses] = useState<Record<number, 'reserved' | 'attended' | 'no_show' | 'canceled'>>({});
   const [statusesLoaded, setStatusesLoaded] = useState<boolean>(false);
+  const [joinUrls, setJoinUrls] = useState<Record<number, string>>({}); // session_id -> join_url
 
   const load = async () => {
     try {
@@ -56,6 +57,23 @@ export default function NotificationsPage() {
           setUserMap(m);
         }
       } catch {}
+    })();
+  }, [items]);
+
+  // Resolve join URLs for listed notifications
+  useEffect(() => {
+    (async () => {
+      const ids = Array.from(new Set(items.map((n) => Number((n.payload_json ?? {})['session_id'] as any)).filter((n): n is number => Number.isFinite(n))));
+      if (ids.length === 0) { setJoinUrls({}); return; }
+      const map: Record<number, string> = {};
+      for (const id of ids) {
+        try {
+          const r = await fetch(`/api/sessions/${id}`);
+          const d = await r.json();
+          if (r.ok && d?.ok && d.session?.join_url) map[id] = d.session.join_url as string;
+        } catch {}
+      }
+      setJoinUrls(map);
     })();
   }, [items]);
 
@@ -134,6 +152,9 @@ export default function NotificationsPage() {
               <div className="text-sm text-gray-800">{title}{partnerLabel}</div>
               <div className="text-xs text-gray-500 mb-2">{when.toLocaleString('es-ES')}</div>
               <div className="flex items-center gap-2">
+                {Number.isFinite(sessionId) && joinUrls[sessionId as number] && (
+                  <a href={joinUrls[sessionId as number]} target="_blank" rel="noopener noreferrer" className="px-2 py-1.5 text-xs rounded-md bg-violet-600 text-white hover:bg-violet-700">Unirse</a>
+                )}
                 {statusLabel && (
                   <span className={`px-2 py-0.5 text-[11px] rounded-full ${statusLabel === 'Rechazada' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{statusLabel}</span>
                 )}

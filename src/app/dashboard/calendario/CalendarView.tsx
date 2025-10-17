@@ -65,7 +65,8 @@ export default function CalendarView() {
   const [viewDate, setViewDate] = useState<Date>(startOfMonth(now));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
-  const [linksByDate, setLinksByDate] = useState<Record<string, string>>({}); // key: YYYY-MM-DD -> URL
+  // key: YYYY-MM-DD -> list of events for preview/list
+  const [eventsByDate, setEventsByDate] = useState<Record<string, Array<{ time: string; partner?: string | null; course?: string | null; url?: string | null }>>>({});
   const [courseCode, setCourseCode] = useState<string>('');
   const [counterpartyId, setCounterpartyId] = useState<string>('');
   const [courses, setCourses] = useState<Array<{ id:number; code:string; name:string }>>([]);
@@ -134,17 +135,25 @@ export default function CalendarView() {
         const res = await fetch(`/api/sessions?from=${encodeURIComponent(start.toISOString())}&to=${encodeURIComponent(end.toISOString())}`);
         const data = await res.json();
         if (res.ok && data?.ok) {
-          const map: Record<string,string> = {};
-          for (const s of data.sessions as Array<{ scheduled_at: string; join_url?: string }>) {
+          const map: Record<string, Array<{ time: string; partner?: string | null; course?: string | null; url?: string | null }>> = {};
+          const fmtTime = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit' });
+          for (const s of data.sessions as Array<{ scheduled_at: string; join_url?: string | null; partner_name?: string | null; course_name?: string | null }>) {
             const key = String(s.scheduled_at).slice(0,10);
-            if (s.join_url) map[key] = s.join_url;
+            const list = map[key] || [];
+            list.push({
+              time: fmtTime.format(new Date(s.scheduled_at)),
+              partner: s.partner_name ?? null,
+              course: s.course_name ?? null,
+              url: s.join_url ?? null,
+            });
+            map[key] = list;
           }
-          setLinksByDate(map);
+          setEventsByDate(map);
         } else {
-          setLinksByDate({});
+          setEventsByDate({});
         }
       } catch {
-        setLinksByDate({});
+        setEventsByDate({});
       }
     })();
   }, [viewDate]);
@@ -220,7 +229,7 @@ export default function CalendarView() {
           const sel = isSelected ? 'ring-2 ring-violet-500 border-violet-500' : '';
           const today = c.isToday ? 'relative after:content-[""] after:absolute after:bottom-1 after:w-1.5 after:h-1.5 after:rounded-full after:bg-violet-500' : '';
           const key = c.date.toISOString().slice(0,10);
-          const link = linksByDate[key];
+          const evts = eventsByDate[key] || [];
           return (
             <button
               key={idx}
@@ -228,19 +237,16 @@ export default function CalendarView() {
               className={[base, tone, sel, today].filter(Boolean).join(' ')}
               aria-label={`Seleccionar ${c.date.toDateString()}`}
             >
-              <div className="flex flex-col items-center gap-1 px-1 text-center">
+              <div className="flex flex-col items-center gap-1 px-1 text-center w-full h-full p-1">
                 <div className="text-base font-medium leading-none">{dayNum}</div>
-                {link && (
-                  <a
-                    href={link}
-                    onClick={(e) => e.stopPropagation()}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-violet-600 underline line-clamp-2 hover:text-violet-700"
-                    title="Abrir enlace de la sesión"
-                  >
-                    Meet
-                  </a>
+                {/* Preview: hasta 3 eventos con hora + contraparte */}
+                {evts.slice(0,3).map((e, i) => (
+                  <div key={i} className="w-full text-[10px] text-violet-700 truncate" title={[e.time, e.partner].filter(Boolean).join(' · ')}>
+                    {e.time}{e.partner ? ` · ${e.partner}` : ''}
+                  </div>
+                ))}
+                {evts.length > 3 && (
+                  <div className="w-full text-[10px] text-gray-500">+{evts.length - 3} más</div>
                 )}
               </div>
             </button>
@@ -256,6 +262,34 @@ export default function CalendarView() {
               <div className="text-sm text-gray-600">Selecciona hora</div>
               <button className="text-gray-400 hover:text-gray-600" onClick={closePicker} aria-label="Cerrar">✕</button>
             </div>
+
+            {/* Lista de reuniones del día seleccionado */}
+            {selectedDate && (
+              <div className="px-4 pb-3">
+                <div className="text-xs text-gray-500 mb-1">Sesiones reservadas este día</div>
+                {(() => {
+                  const key = selectedDate.toISOString().slice(0,10);
+                  const evts = eventsByDate[key] || [];
+                  if (evts.length === 0) return <div className="text-xs text-gray-500">No hay sesiones este día.</div>;
+                  return (
+                    <div className="flex flex-col gap-2 max-h-40 overflow-auto pr-1">
+                      {evts.map((e, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                          <div className="text-gray-700 truncate">
+                            <span className="font-medium text-violet-700">{e.time}</span>
+                            {e.partner ? ` · ${e.partner}` : ''}
+                            {e.course ? ` · ${e.course}` : ''}
+                          </div>
+                          {e.url && (
+                            <a href={e.url} target="_blank" rel="noopener noreferrer" className="px-2 py-1 rounded-md bg-violet-600 text-white hover:bg-violet-700">Unirse</a>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
 
             <div className="px-4 py-3">
               <div className="text-base font-medium mb-2">

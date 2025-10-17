@@ -8,6 +8,7 @@ type NotificationRow = {
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '../../../../../lib/db';
 import { getServerSession } from '../../../../../lib/session';
+import { createJitsiRoomName, jitsiLink } from '../../../../../lib/jitsi';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,39 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
     }
 
     if (action === 'accept') {
+      // Asegurar que la sesión tenga join_url real (no placeholder)
+      const srows = await sql<{ scheduled_at: string; duration_min: number; join_url: string | null; room_name: string | null; meet_link: string | null }>`
+        SELECT scheduled_at, duration_min, join_url, room_name, meet_link
+        FROM tutoring_sessions WHERE id = ${sessionId} LIMIT 1;
+      `;
+      const s = srows?.[0];
+      if (s && (!s.join_url || /https?:\/\/meet\.example\//i.test(s.join_url))) {
+        const room = s.room_name && s.room_name.trim().length > 0 ? s.room_name : createJitsiRoomName('tutor');
+        const link = s.meet_link && s.meet_link.trim().length > 0 ? s.meet_link : jitsiLink(room);
+        await sql/* sql */`
+          UPDATE tutoring_sessions
+          SET room_name = ${room},
+              meet_link = ${link},
+              join_url  = ${link},
+              starts_at = COALESCE(starts_at, scheduled_at),
+              ends_at   = COALESCE(ends_at, scheduled_at + make_interval(mins => duration_min))
+          WHERE id = ${sessionId};
+        `;
+      }
+      // Asegurar link Jitsi idempotentemente
+      const det = await sql/* sql */`
+        SELECT id, room_name, meet_link, join_url FROM tutoring_sessions WHERE id = ${sessionId} LIMIT 1;
+      `;
+      const d = det?.[0] as { id: number; room_name: string | null; meet_link: string | null; join_url: string | null } | undefined;
+      if (d && (!d.join_url || !d.join_url.trim())) {
+        const room = d.room_name && d.room_name.trim().length > 0 ? d.room_name : createJitsiRoomName('tutor');
+        const link = d.meet_link && d.meet_link.trim().length > 0 ? d.meet_link : jitsiLink(room);
+        await sql/* sql */`
+          UPDATE tutoring_sessions
+          SET room_name = ${room}, meet_link = ${link}, join_url = COALESCE(join_url, ${link})
+          WHERE id = ${sessionId};
+        `;
+      }
       // Marcar reserva del usuario como accepted/attending si existe; si no, crearla
       // Intentar actualizar si hay reserva
       const upd = await sql<{ id: number }>`
@@ -70,7 +104,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ id: st
         UPDATE notifications SET read_at = now()
         WHERE id = ${id} AND user_id = ${session.userId};
       `;
-      return NextResponse.json({ ok: true, result: 'accepted' });
+  return NextResponse.json({ ok: true, result: 'accepted' });
     } else {
       // deny: cancelar la reserva del usuario si existe
       await sql/* sql */`
