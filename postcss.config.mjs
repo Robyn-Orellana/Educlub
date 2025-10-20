@@ -5,8 +5,10 @@ if (!process.env.TAILWIND_DISABLE_OXIDE) {
   process.env.TAILWIND_DISABLE_OXIDE = '1';
 }
 
-import tailwind from "@tailwindcss/postcss";
-
+// Next.js requires PostCSS plugins to be specified as strings, not imported functions.
+// See: https://nextjs.org/docs/messages/postcss-shape
 export default {
-  plugins: [tailwind],
+  plugins: {
+    "@tailwindcss/postcss": {},
+  },
 };
