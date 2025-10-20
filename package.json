@@ -5,7 +5,6 @@
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
-    "build:vercel": "cross-env TAILWIND_DISABLE_OXIDE=1 LIGHTNINGCSS_USE_WASM=1 LIGHTNINGCSS_IGNORE_NODE=1 next build",
     "start": "next start",
     "lint": "eslint"
   },
