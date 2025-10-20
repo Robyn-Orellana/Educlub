@@ -24,7 +24,7 @@ export default function TutorCoursesManager() {
           setMine(mineNorm);
           setSelected(mineNorm.map((c: Course) => c.id));
         } else setError(json.error || 'Error al cargar cursos');
-      } catch (e) {
+      } catch (_e) {
         if (active) setError('Error al cargar cursos');
       } finally {
         if (active) setLoading(false);

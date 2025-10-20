@@ -34,8 +34,8 @@ export default function ProfileEditor() {
     return () => { active = false };
   }, []);
 
-  async function onSubmit(_e: React.FormEvent) {
-    _e.preventDefault();
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
     if (!profile) return;
     setSaving(true);
     setError(null);

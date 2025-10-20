@@ -30,8 +30,57 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files (NEVER commit real secrets)
+.env
+.env.*
+!.env.example
+!.env.local.example
+!.env.sample
+!.env*.example
+
+# Firebase/Google service accounts and credentials
+firebase-*.json
+serviceAccount*.json
+*.service-account.json
+*.gcloud.json
+*.firebase.json
+
+# AWS/GCP/Azure credential folders (user-specific)
+.aws/
+.azure/
+.gcloud/
+
+# Private keys and certs
+*.key
+*.crt
+*.cert
+*.pfx
+*.p12
+*.jks
+*.keystore
+*.pub
+*.der
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
+# Local env/version managers
+.envrc
+.tool-versions
+.python-version
+.nvmrc
+.node-version
+.ruby-version
+
+# Package manager caches
+.npm/
+.pnpm-store/
+.cache/
+
+# OS-specific
+Thumbs.db
+Desktop.ini
 
 # vercel
 .vercel
@@ -56,6 +105,7 @@ Thumbs.db
 *.bak
 *.backup
 *.dump
+# Root-level dumps (keep schema under /sql tracked)
 /*.sql
 !sql/*.sql
 !sql/**/*.sql

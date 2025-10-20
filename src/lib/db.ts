@@ -544,3 +544,280 @@ export async function listRecentRatingsForUser(userId: number, limit = 10): Prom
     return [];
   }
 }
+
+// ===============
+// Foros (threads y comments)
+// ===============
+
+export type ForumThread = {
+  id: number;
+  author_id: number;
+  title: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  last_comment_at: string | null;
+  comments_count: number;
+  author_name: string;
+  likes_count?: number;
+  liked_by_me?: boolean;
+  attachments?: ForumAttachment[];
+};
+
+export type ForumComment = {
+  id: number;
+  thread_id: number;
+  author_id: number;
+  parent_id: number | null;
+  body: string;
+  created_at: string;
+  updated_at: string;
+  author_name: string;
+  likes_count?: number;
+  liked_by_me?: boolean;
+  attachments?: ForumAttachment[];
+};
+
+export type ForumAttachment = {
+  id: number;
+  thread_id: number | null;
+  comment_id: number | null;
+  author_id: number;
+  kind: 'image' | 'link';
+  url: string;
+  title: string | null;
+  created_at: string;
+};
+
+export async function listForumThreads(limit = 50): Promise<ForumThread[]> {
+  try {
+    const rows = await sql<ForumThread>`
+      SELECT t.id,
+             t.author_id,
+             t.title,
+             t.body,
+             t.created_at,
+             t.updated_at,
+             t.last_comment_at,
+             t.comments_count,
+             (u.first_name || ' ' || u.last_name) AS author_name
+      FROM forum_threads t
+      JOIN users u ON u.id = t.author_id
+      ORDER BY COALESCE(t.last_comment_at, t.created_at) DESC
+      LIMIT ${limit};
+    `;
+    return rows;
+  } catch (error) {
+    console.error('Error al listar hilos del foro:', error);
+    return [];
+  }
+}
+
+export async function createForumThread(authorId: number, title: string, body: string, attachments?: Array<{ kind: 'image' | 'link'; url: string; title?: string | null }>): Promise<ForumThread | null> {
+  try {
+    const rows = await sql<ForumThread>`
+      WITH ins AS (
+        INSERT INTO forum_threads(author_id, title, body)
+        VALUES (${authorId}::bigint, ${title}::text, ${body}::text)
+        RETURNING id, author_id, title, body, created_at, updated_at, last_comment_at, comments_count
+      )
+      SELECT i.*, (u.first_name || ' ' || u.last_name) AS author_name
+      FROM ins i
+      JOIN users u ON u.id = i.author_id
+      LIMIT 1;
+    `;
+    const thread = rows?.[0] ?? null;
+    if (!thread) return null;
+    if (attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        const kind = att.kind === 'image' ? 'image' : 'link';
+        const title = att.title ?? null;
+        await sql/* sql */`
+          INSERT INTO forum_attachments (thread_id, comment_id, author_id, kind, url, title)
+          VALUES (${thread.id}::bigint, NULL, ${authorId}::bigint, ${kind}::text, ${att.url}::text, ${title}::text)
+        `;
+      }
+    }
+    return thread;
+  } catch (error) {
+    console.error('Error al crear hilo del foro:', error);
+    return null;
+  }
+}
+
+export async function getForumThread(threadId: number, viewerUserId?: number): Promise<ForumThread | null> {
+  try {
+    const rows = await sql<ForumThread>`
+      SELECT t.id,
+             t.author_id,
+             t.title,
+             t.body,
+             t.created_at,
+             t.updated_at,
+             t.last_comment_at,
+             t.comments_count,
+             (u.first_name || ' ' || u.last_name) AS author_name,
+             (SELECT COUNT(*)::int FROM forum_thread_likes l WHERE l.thread_id = t.id) AS likes_count,
+             ((${viewerUserId ?? null}::bigint) IS NOT NULL AND EXISTS (
+               SELECT 1 FROM forum_thread_likes l2 WHERE l2.thread_id = t.id AND l2.user_id = ${viewerUserId ?? null}::bigint
+             )) AS liked_by_me
+      FROM forum_threads t
+      JOIN users u ON u.id = t.author_id
+      WHERE t.id = ${threadId}
+      LIMIT 1;
+    `;
+    const thread = rows?.[0] ?? null;
+    if (!thread) return null;
+    const atts = await sql<ForumAttachment>`
+      SELECT id, thread_id, comment_id, author_id, kind, url, title, created_at
+      FROM forum_attachments
+      WHERE thread_id = ${threadId}
+      ORDER BY created_at ASC;
+    `;
+    (thread as ForumThread).attachments = atts;
+    return thread;
+  } catch (error) {
+    console.error('Error al obtener hilo del foro:', error);
+    return null;
+  }
+}
+
+export async function listForumComments(threadId: number, viewerUserId?: number): Promise<ForumComment[]> {
+  try {
+    const rows = await sql<ForumComment>`
+      SELECT c.id, c.thread_id, c.author_id, c.parent_id, c.body, c.created_at, c.updated_at,
+             (u.first_name || ' ' || u.last_name) AS author_name,
+             (SELECT COUNT(*)::int FROM forum_comment_likes cl WHERE cl.comment_id = c.id) AS likes_count,
+             ((${viewerUserId ?? null}::bigint) IS NOT NULL AND EXISTS (
+               SELECT 1 FROM forum_comment_likes cl2 WHERE cl2.comment_id = c.id AND cl2.user_id = ${viewerUserId ?? null}::bigint
+             )) AS liked_by_me
+      FROM forum_comments c
+      JOIN users u ON u.id = c.author_id
+      WHERE c.thread_id = ${threadId}
+      ORDER BY c.created_at ASC;
+    `;
+    const comments = rows;
+    if (comments.length > 0) {
+      const ids = comments.map((c) => Number(c.id)).filter((n) => Number.isFinite(n));
+      const attRows = ids.length > 0
+        ? await sql<ForumAttachment>`
+            SELECT id, thread_id, comment_id, author_id, kind, url, title, created_at
+            FROM forum_attachments
+            WHERE comment_id = ANY(${ids}::bigint[])
+            ORDER BY created_at ASC;
+          `
+        : [];
+      const byComment = new Map<number, ForumAttachment[]>();
+      for (const att of attRows) {
+        if (att.comment_id == null) continue;
+        const arr = byComment.get(att.comment_id) ?? [];
+        arr.push(att);
+        byComment.set(att.comment_id, arr);
+      }
+      for (const c of comments) {
+        (c as ForumComment).attachments = byComment.get(c.id) ?? [];
+      }
+    }
+    return comments;
+  } catch (error) {
+    console.error('Error al listar comentarios del foro:', error);
+    return [];
+  }
+}
+
+export async function addForumComment(authorId: number, threadId: number, body: string, parentId?: number | null, attachments?: Array<{ kind: 'image' | 'link'; url: string; title?: string | null }>): Promise<ForumComment | null> {
+  try {
+    const rows = await sql<ForumComment>`
+      WITH ins AS (
+        INSERT INTO forum_comments(thread_id, author_id, parent_id, body)
+        VALUES (${threadId}::bigint, ${authorId}::bigint, ${parentId ?? null}::bigint, ${body}::text)
+        RETURNING id, thread_id, author_id, parent_id, body, created_at, updated_at
+      ), upd AS (
+        UPDATE forum_threads
+           SET comments_count = comments_count + 1,
+               last_comment_at = now(),
+               updated_at = now()
+         WHERE id = ${threadId}
+        RETURNING id
+      )
+  SELECT i.*, (u.first_name || ' ' || u.last_name) AS author_name
+      FROM ins i
+      JOIN users u ON u.id = i.author_id
+      LIMIT 1;
+    `;
+    const comment = rows?.[0] ?? null;
+    if (!comment) return null;
+    if (attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        const kind = att.kind === 'image' ? 'image' : 'link';
+        const title = att.title ?? null;
+        await sql/* sql */`
+          INSERT INTO forum_attachments (thread_id, comment_id, author_id, kind, url, title)
+          VALUES (NULL, ${comment.id}::bigint, ${authorId}::bigint, ${kind}::text, ${att.url}::text, ${title}::text)
+        `;
+      }
+    }
+    return comment;
+  } catch (error) {
+    console.error('Error al agregar comentario de foro:', error);
+    return null;
+  }
+}
+
+export async function deleteForumCommentIfAuthor(userId: number, commentId: number): Promise<{ deleted: boolean; thread_id?: number }> {
+  try {
+    const rows = await sql<{ deleted: boolean; thread_id: number }>`
+      WITH del AS (
+        DELETE FROM forum_comments
+         WHERE id = ${commentId}::bigint AND author_id = ${userId}::bigint
+         RETURNING thread_id
+      ), upd AS (
+        UPDATE forum_threads t
+           SET comments_count = GREATEST(t.comments_count - 1, 0)
+          WHERE t.id IN (SELECT thread_id FROM del)
+        RETURNING t.id
+      )
+      SELECT (SELECT COUNT(*) FROM del) > 0 AS deleted, (SELECT thread_id FROM del LIMIT 1) AS thread_id;
+    `;
+    return rows?.[0] ?? { deleted: false };
+  } catch (error) {
+    console.error('Error al eliminar comentario:', error);
+    return { deleted: false };
+  }
+}
+
+export async function toggleThreadLike(userId: number, threadId: number): Promise<{ liked: boolean; likes_count: number }> {
+  try {
+    const existed = await sql<{ exists: boolean }>`
+      SELECT EXISTS(SELECT 1 FROM forum_thread_likes WHERE user_id = ${userId} AND thread_id = ${threadId}) AS exists;
+    `;
+    if (existed?.[0]?.exists) {
+      await sql`DELETE FROM forum_thread_likes WHERE user_id = ${userId} AND thread_id = ${threadId};`;
+    } else {
+      await sql`INSERT INTO forum_thread_likes(user_id, thread_id) VALUES (${userId}, ${threadId}) ON CONFLICT DO NOTHING;`;
+    }
+    const countRows = await sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM forum_thread_likes WHERE thread_id = ${threadId};`;
+    return { liked: !existed?.[0]?.exists, likes_count: countRows?.[0]?.c ?? 0 };
+  } catch (error) {
+    console.error('Error al alternar like de hilo:', error);
+    return { liked: false, likes_count: 0 };
+  }
+}
+
+export async function toggleCommentLike(userId: number, commentId: number): Promise<{ liked: boolean; likes_count: number }> {
+  try {
+    const existed = await sql<{ exists: boolean }>`
+      SELECT EXISTS(SELECT 1 FROM forum_comment_likes WHERE user_id = ${userId} AND comment_id = ${commentId}) AS exists;
+    `;
+    if (existed?.[0]?.exists) {
+      await sql`DELETE FROM forum_comment_likes WHERE user_id = ${userId} AND comment_id = ${commentId};`;
+    } else {
+      await sql`INSERT INTO forum_comment_likes(user_id, comment_id) VALUES (${userId}, ${commentId}) ON CONFLICT DO NOTHING;`;
+    }
+    const countRows = await sql<{ c: number }>`SELECT COUNT(*)::int AS c FROM forum_comment_likes WHERE comment_id = ${commentId};`;
+    return { liked: !existed?.[0]?.exists, likes_count: countRows?.[0]?.c ?? 0 };
+  } catch (error) {
+    console.error('Error al alternar like de comentario:', error);
+    return { liked: false, likes_count: 0 };
+  }
+}
