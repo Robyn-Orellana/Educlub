@@ -2,6 +2,9 @@
   "name": "educlub",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.18 <23"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -37,5 +40,14 @@
     "eslint-config-next": "15.5.2",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "lightningcss": "^1.30.2",
+    "@tailwindcss/node": {
+      "lightningcss": "^1.30.2"
+    },
+    "@tailwindcss/postcss": {
+      "lightningcss": "^1.30.2"
+    }
   }
 }
