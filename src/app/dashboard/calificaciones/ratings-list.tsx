@@ -20,6 +20,12 @@ type CourseRow = {
 type UserWithCourses = UserRow & { courses: CourseRow[]; avg?: number; total?: number };
 
 export default function RatingsList() {
+  function roleLabel(role: string): string {
+    const r = (role || '').toLowerCase();
+    if (r === 'student') return 'Estudiante';
+    if (r === 'tutor') return 'Tutor';
+    return role || '';
+  }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<UserWithCourses[]>([]);
@@ -88,7 +94,7 @@ export default function RatingsList() {
             <tr className="text-left text-gray-500">
               <th className="py-2">Usuario</th>
               <th className="py-2">Correo</th>
-              <th className="py-2">Rol</th>
+              <th className="py-2 min-w-[120px] whitespace-nowrap">Rol</th>
               <th className="py-2">Cursos</th>
               <th className="py-2">Rating</th>
               <th className="py-2"></th>
@@ -99,11 +105,13 @@ export default function RatingsList() {
               <tr key={u.id} className="border-t">
                 <td className="py-2">{u.first_name} {u.last_name}</td>
                 <td className="py-2 text-gray-600">{u.email}</td>
-                <td className="py-2">
-                  <span className="capitalize">{u.role}</span>
+                <td className="py-2 whitespace-nowrap pr-4">
+                  <span>{roleLabel(u.role)}</span>
                 </td>
                 <td className="py-2 text-gray-600">
-                  {u.courses.length === 0 ? <span className="text-gray-400">—</span> : u.courses.map((c) => c.code).join(', ')}
+                  {u.courses.length === 0
+                    ? <span className="text-gray-400">—</span>
+                    : u.courses.map((c) => c.name).join(', ')}
                 </td>
                 <td className="py-2">
                   <div className="flex items-center gap-2">

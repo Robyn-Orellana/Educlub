@@ -26,7 +26,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 
 export async function getServerSession(): Promise<ServerSession> {
   try {
-    // ⚠️ En Next.js reciente, cookies() debe "await"-earse en Handlers
+    // Leer cookie de sesión
     const cookieStore = await cookies();
     const sessionToken = cookieStore.get('sid')?.value;
 
@@ -35,16 +35,33 @@ export async function getServerSession(): Promise<ServerSession> {
       return defaultSession;
     }
 
-    // Validar sesión vía función SQL
-    const rows = await sql/* sql */`
-      SELECT * FROM app_validate_session(${sessionToken}::uuid);
+    // Validar sesión contra auth_sessions y obtener datos del usuario
+    const rows = await sql<{
+      user_id: number;
+      first_name: string;
+      last_name: string;
+      email: string;
+      role: string;
+      expires_at: string;
+    }>`
+      SELECT s.user_id,
+             u.first_name,
+             u.last_name,
+             u.email,
+             r.name AS role,
+             s.expires_at
+      FROM auth_sessions s
+      JOIN users u ON u.id = s.user_id
+      JOIN roles r ON r.id = u.role_id
+      WHERE s.id = ${sessionToken}::uuid
+        AND s.revoked_at IS NULL
+        AND s.expires_at > now()
+      LIMIT 1;
     `;
 
-    if (!rows.length) {
-      return defaultSession;
-    }
+    const row = rows?.[0];
+    if (!row) return defaultSession;
 
-    const row = rows[0] as { user_id: number; first_name: string; last_name: string; email: string; role: string; expires_at?: string };
     return {
       token: sessionToken,
       userId: row.user_id,

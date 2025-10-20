@@ -138,7 +138,7 @@ function LoginInner() {
               </div>
               <div className="p-4 bg-gradient-to-br from-purple-50 to-cyan-50 rounded-lg border border-white/60">
                 <h3 className="text-sm font-semibold">Calendario</h3>
-                <p className="text-xs text-slate-500 mt-1">Agenda y recibe recordatorios.</p>
+                <p className="text-xs text-slate-500 mt-1">Agenda y recibe notificaciones de sesiones</p>
               </div>
             </div>
           </div>
@@ -148,7 +148,7 @@ function LoginInner() {
           <div className="flex items-center justify-between mb-6">
             <div>
               <h2 className="text-2xl font-bold text-slate-800">Iniciar sesión</h2>
-              <p className="text-sm text-slate-500 mt-1">Ingresa con tu correo institucional</p>
+              <p className="text-sm text-slate-500 mt-1">Ingresa con tu correo electrónico</p>
             </div>
             <div className="hidden sm:flex items-center gap-2">
               <Image src="/file.svg" alt="Icon" width={28} height={28} />
@@ -163,7 +163,7 @@ function LoginInner() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm text-slate-600 mb-1" htmlFor="email">Correo institucional</label>
+              <label className="block text-sm text-slate-600 mb-1" htmlFor="email">Correo electrónico</label>
               <input 
                 id="email"
                 className="w-full px-4 py-3 rounded-lg border border-slate-200 focus:ring-2 focus:ring-violet-200" 
@@ -171,7 +171,7 @@ function LoginInner() {
                 name="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="usuario@umg.edu.gt" 
+                placeholder="correo@gmail.com" 
                 required 
                 disabled={isLoading}
               />
@@ -234,10 +234,6 @@ function LoginInner() {
 
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4"></div>
-
-            <p className="text-xs text-slate-400 mt-4">
-              Al continuar aceptas las políticas de uso y privacidad de la universidad.
-            </p>
           </form>
 
           {showSignup && (

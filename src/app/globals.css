@@ -1,26 +1,190 @@
 @import "tailwindcss";
 
+/*
+  Global Night Mode (Dark) Theme
+  - Default: dark palette for backgrounds, surfaces, text, borders and accents
+  - Light mode is available as a fallback for users preferring it (OS setting)
+  - Includes targeted overrides for common Tailwind utility classes used in the project
+*/
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Base dark theme tokens */
+  --background: #0b1220; /* deep slate/indigo black */
+  --foreground: #e5eaf2; /* near-white, comfortable on dark */
+
+  /* Surfaces (cards, panels, tables) */
+  --surface-1: #0f172a; /* slate-900 */
+  --surface-2: #111827; /* gray-900 */
+  --surface-3: #1f2937; /* gray-800 */
+
+  /* Text hierarchy */
+  --text-primary: var(--foreground);
+  --text-muted: #b6c2d4;  /* slate-300/200 mix */
+  --text-subtle: #8fa0b8; /* slate-400 */
+
+  /* Borders and dividers */
+  --border: #2b3a50;      /* slate-700-ish */
+  --divider: #1e2a3d;
+
+  /* Accents (links, buttons) */
+  --accent: #7dd3fc;      /* sky-300 */
+  --accent-strong: #38bdf8; /* sky-400 */
+  --primary: #6366f1;     /* indigo-500 */
+  --primary-hover: #4f46e5; /* indigo-600 */
+
+  /* Status helpers for subtle badges */
+  --success-bg: rgba(16, 185, 129, 0.18); /* emerald */
+  --success-fg: #86efac; /* green-300 */
+  --danger-bg: rgba(248, 113, 113, 0.18); /* red */
+  --danger-fg: #fca5a5; /* red-300 */
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* Note: If using Tailwind v4 @theme, you can expose tokens there; omitted here to satisfy linters */
 
-@media (prefers-color-scheme: dark) {
+/* Optional: Light-mode fallback for users who prefer light scheme */
+@media (prefers-color-scheme: light) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #ffffff;
+    --foreground: #0f172a;
+
+    --surface-1: #ffffff;
+    --surface-2: #f8fafc; /* slate-50 */
+    --surface-3: #f1f5f9; /* slate-100 */
+
+    --text-primary: #0f172a;
+    --text-muted: #475569;  /* slate-600 */
+    --text-subtle: #64748b; /* slate-500 */
+
+    --border: #e2e8f0; /* slate-200 */
+    --divider: #e5e7eb; /* gray-200 */
+
+    --accent: #2563eb; /* blue-600 */
+    --accent-strong: #1d4ed8; /* blue-700 */
+    --primary: #b4b3b6; /* violet-600 */
+    --primary-hover: #c9c9c9; /* violet-700 */
+
+    --success-bg: rgba(34, 197, 94, 0.12);
+    --success-fg: #16a34a;
+    --danger-bg: rgba(239, 68, 68, 0.12);
+    --danger-fg: #dc2626;
   }
 }
 
+/* Base document styling */
+html { color-scheme: dark light; }
+
 body {
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* Borders and dividers */
+hr { border-color: var(--divider); }
+
+/* Utility overrides for dark readability
+   These target common classes used throughout the app to map them to dark surfaces and text. */
+
+/* Card and panel backgrounds */
+.bg-white { background-color: var(--surface-1) !important; }
+.bg-gray-50 { background-color: var(--surface-2) !important; }
+.hover\:bg-gray-50:hover { background-color: color-mix(in oklab, var(--surface-1) 85%, black) !important; }
+/* Common gray backgrounds used by buttons/pills -> dark tints with good contrast */
+.bg-gray-100 { background-color: color-mix(in oklab, var(--surface-1) 75%, black) !important; }
+.hover\:bg-gray-100:hover { background-color: color-mix(in oklab, var(--surface-1) 80%, black) !important; }
+.bg-gray-200 { background-color: color-mix(in oklab, var(--surface-1) 65%, black) !important; }
+.hover\:bg-gray-200:hover { background-color: color-mix(in oklab, var(--surface-1) 70%, black) !important; }
+.bg-gray-300 { background-color: color-mix(in oklab, var(--surface-1) 55%, black) !important; }
+.hover\:bg-gray-300:hover { background-color: color-mix(in oklab, var(--surface-1) 60%, black) !important; }
+/* Dashboard page background formerly bg-gray-50 */
+.min-h-screen.flex.bg-gray-50 { background-color: var(--background) !important; }
+
+/* Subtle frosted backgrounds used on login */
+.bg-white\/60 { background-color: color-mix(in oklab, var(--surface-1) 60%, transparent) !important; }
+/* Other white transparencies */
+.bg-white\/90 { background-color: color-mix(in oklab, var(--surface-1) 90%, transparent) !important; }
+
+/* Pastel utility backgrounds -> dark tints (avoid white surfaces) */
+.bg-violet-50 { background-color: color-mix(in oklab, var(--primary) 12%, transparent) !important; }
+.hover\:bg-violet-50:hover { background-color: color-mix(in oklab, var(--primary) 18%, transparent) !important; }
+.bg-red-50 { background-color: color-mix(in oklab, #ef4444 12%, transparent) !important; }
+.hover\:bg-red-50:hover { background-color: color-mix(in oklab, #ef4444 18%, transparent) !important; }
+
+/* Violet borders used for selections -> darker on dark surfaces */
+.border-violet-200 { border-color: color-mix(in oklab, var(--primary) 40%, black) !important; }
+
+/* Darken only light/pastel gradients (e.g., ...-50 or white stops) */
+[class*="bg-gradient-to-"][class~="from-white"],
+[class*="bg-gradient-to-"][class~="to-white"],
+[class*="bg-gradient-to-"][class~="via-white"],
+[class*="bg-gradient-to-"][class*="from-"][class*="-50"],
+[class*="bg-gradient-to-"][class*="via-"][class*="-50"],
+[class*="bg-gradient-to-"][class*="to-"][class*="-50"] {
+  background-image: linear-gradient(135deg,
+    color-mix(in oklab, var(--surface-2) 92%, black),
+    color-mix(in oklab, var(--surface-1) 84%, black)
+  ) !important;
+}
+
+/* Borders */
+.border { border-color: var(--border) !important; }
+.border-gray-100 { border-color: var(--border) !important; }
+.divide-y > :not([hidden]) ~ :not([hidden]) { border-top-color: var(--divider) !important; }
+
+/* Primary text */
+.text-gray-900, .text-gray-800, .text-slate-800 { color: var(--text-primary) !important; }
+
+/* Muted and secondary text */
+.text-gray-700, .text-slate-700 { color: var(--text-primary) !important; }
+.text-gray-600, .text-slate-600 { color: var(--text-muted) !important; }
+.text-gray-500, .text-slate-500 { color: var(--text-subtle) !important; }
+.text-gray-400, .text-slate-400 { color: #7586a3 !important; }
+
+/* Ensure violet-emphasis text remains readable as white on dark */
+.text-violet-700, .text-violet-600 { color: #ffffff !important; }
+
+/* Links and interactive text accents */
+.text-blue-600, .text-indigo-600 { color: var(--accent-strong) !important; }
+.hover\:text-blue-700:hover, .hover\:text-indigo-700:hover { color: var(--accent) !important; }
+.hover\:underline { text-underline-offset: 3px; }
+
+/* Buttons (keep high contrast on dark) */
+.bg-blue-600 { background-color: #2563eb !important; color: #ffffff !important; }
+.hover\:bg-blue-700:hover { background-color: #1d4ed8 !important; }
+.bg-violet-600 { background-color: #7c3aed !important; color: #ffffff !important; }
+.hover\:bg-violet-700:hover { background-color: #6d28d9 !important; }
+.bg-green-600 { background-color: #16a34a !important; color: #ffffff !important; }
+.hover\:bg-green-700:hover { background-color: #15803d !important; }
+.bg-red-600 { background-color: #dc2626 !important; color: #ffffff !important; }
+.hover\:bg-red-700:hover { background-color: #b91c1c !important; }
+/* Gray pill buttons: ensure text is readable */
+.text-gray-700 { color: var(--text-primary) !important; }
+.text-gray-400 { color: var(--text-subtle) !important; }
+button[disabled], .cursor-not-allowed { opacity: 0.7 !important; }
+
+/* Subtle status chips */
+.bg-green-100 { background-color: var(--success-bg) !important; }
+.text-green-700 { color: var(--success-fg) !important; }
+.bg-red-100 { background-color: var(--danger-bg) !important; }
+.text-red-700 { color: var(--danger-fg) !important; }
+
+/* Tables */
+thead.bg-gray-50, .bg-gray-50 thead { background-color: var(--surface-2) !important; }
+table { border-color: var(--divider); }
+th { color: var(--text-muted); }
+td { color: var(--text-primary); }
+
+/* Inputs */
+input, textarea, select {
+  background-color: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+input::placeholder, textarea::placeholder { color: var(--text-subtle); }
+
+/* Scrollbars (WebKit) */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: color-mix(in oklab, var(--surface-1) 70%, black); }
+*::-webkit-scrollbar-thumb { background-color: #273449; border-radius: 6px; border: 2px solid color-mix(in oklab, var(--surface-1) 70%, black); }

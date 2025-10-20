@@ -50,6 +50,7 @@ export type Course = {
   name: string;
   description?: string;
   tutor?: string;
+  tutors?: string[];
   inscritos?: number;
   sesiones?: number;
   promedio_estrellas?: number;
@@ -148,6 +149,7 @@ export async function getCoursesOverview(): Promise<Course[]> {
       name: string;
       description: string | null;
       tutor: string | null;
+      tutors: string[] | null;
       inscritos: number;
       sesiones: number;
       promedio_estrellas: number;
@@ -166,6 +168,14 @@ export async function getCoursesOverview(): Promise<Course[]> {
           WHERE tc.course_id = c.id
           LIMIT 1
         ) AS tutor,
+        -- Lista completa de tutores del curso
+        ARRAY(
+          SELECT CONCAT(u.first_name, ' ', u.last_name)
+          FROM tutor_courses tc
+          JOIN users u ON tc.tutor_id = u.id
+          WHERE tc.course_id = c.id
+          ORDER BY u.last_name, u.first_name
+        ) AS tutors,
         -- Cantidad de estudiantes inscritos
         (
           SELECT COUNT(*) 
@@ -205,6 +215,7 @@ export async function getCoursesOverview(): Promise<Course[]> {
       name: row.name,
       description: row.description ?? undefined,
       tutor: row.tutor ?? undefined,
+      tutors: Array.isArray(row.tutors) ? row.tutors : [],
       inscritos: row.inscritos,
       sesiones: row.sesiones,
       promedio_estrellas: row.promedio_estrellas
@@ -381,6 +392,37 @@ export async function setTutorCourses(userId: number, courseIds: number[]) {
   }
 }
 
+// Enrollments management (student courses)
+export async function setEnrollmentsForUser(userId: number, courseIds: number[]) {
+  try {
+    const ids = Array.from(new Set(courseIds.map((n) => Number(n)).filter((n) => Number.isFinite(n))));
+
+    await sql/* sql */`
+      DELETE FROM enrollments WHERE user_id = ${userId};
+    `;
+
+    for (const cid of ids) {
+      await sql/* sql */`
+        INSERT INTO enrollments (user_id, course_id)
+        VALUES (${userId}, ${cid})
+        ON CONFLICT DO NOTHING;
+      `;
+    }
+
+    const rows = await sql<{ id: number; code: string; name: string }>`
+      SELECT c.id, c.code, c.name
+      FROM enrollments e
+      JOIN courses c ON c.id = e.course_id
+      WHERE e.user_id = ${userId}
+      ORDER BY c.code;
+    `;
+    return rows;
+  } catch (error) {
+    console.error('Error al establecer inscripciones del usuario:', error);
+    return [];
+  }
+}
+
 // ===============
 // Ratings (calificaciones)
 // ===============
@@ -541,6 +583,81 @@ export async function listRecentRatingsForUser(userId: number, limit = 10): Prom
     return rows;
   } catch (error) {
     console.error('Error al listar calificaciones:', error);
+    return [];
+  }
+}
+
+// ===============
+// Inicio/Dashboard: próximas sesiones del usuario
+// ===============
+
+export type UpcomingSession = {
+  session_id: number;
+  scheduled_at: string;
+  duration_min: number;
+  platform: string;
+  join_url: string | null;
+  course_code: string;
+  course_name: string;
+  role: 'host' | 'guest';
+  partner_id: number | null;
+  partner_name: string | null;
+};
+
+export async function listUpcomingSessionsForUser(userId: number, limit = 3): Promise<UpcomingSession[]> {
+  try {
+    const rows = await sql<UpcomingSession>/* sql */`
+      WITH host AS (
+        SELECT 
+          s.id AS session_id,
+          s.scheduled_at,
+          s.duration_min,
+          s.platform,
+          COALESCE(s.meet_link, s.join_url) AS join_url,
+          c.code AS course_code,
+          c.name AS course_name,
+          'host'::text AS role,
+          r1.student_id AS partner_id,
+          u1.first_name || ' ' || u1.last_name AS partner_name
+        FROM tutoring_sessions s
+        JOIN courses c ON c.id = s.course_id
+        LEFT JOIN LATERAL (
+          SELECT r.student_id FROM reservations r
+          WHERE r.session_id = s.id AND r.status <> 'canceled'
+          ORDER BY CASE WHEN r.status = 'reserved' THEN 0 ELSE 1 END, r.id
+          LIMIT 1
+        ) r1 ON TRUE
+        LEFT JOIN users u1 ON u1.id = r1.student_id
+        WHERE s.tutor_id = ${userId}
+          AND s.scheduled_at >= now()
+      ),
+      guest AS (
+        SELECT 
+          s.id AS session_id,
+          s.scheduled_at,
+          s.duration_min,
+          s.platform,
+          COALESCE(s.meet_link, s.join_url) AS join_url,
+          c.code AS course_code,
+          c.name AS course_name,
+          'guest'::text AS role,
+          s.tutor_id AS partner_id,
+          u2.first_name || ' ' || u2.last_name AS partner_name
+        FROM tutoring_sessions s
+        JOIN reservations r ON r.session_id = s.id AND r.student_id = ${userId} AND r.status <> 'canceled'
+        JOIN courses c ON c.id = s.course_id
+        LEFT JOIN users u2 ON u2.id = s.tutor_id
+        WHERE s.scheduled_at >= now()
+      )
+      SELECT * FROM host
+      UNION ALL
+      SELECT * FROM guest
+      ORDER BY scheduled_at ASC
+      LIMIT ${limit};
+    `;
+    return rows;
+  } catch (error) {
+    console.error('Error al listar próximas sesiones del usuario:', error);
     return [];
   }
 }

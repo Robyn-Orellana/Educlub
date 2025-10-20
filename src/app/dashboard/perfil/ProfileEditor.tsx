@@ -6,7 +6,7 @@ type Profile = {
   first_name: string;
   last_name: string;
   email: string;
-  role: 'student' | 'tutor' | string;
+  role: 'Estudiante' | 'Tutor' | string;
   avatar_url: string | null;
 };
 

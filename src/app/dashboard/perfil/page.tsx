@@ -1,8 +1,9 @@
 import React from 'react';
-import { getEnrollmentsForUser } from '../../../lib/db';
+import { getEnrollmentsForUser, getUserProfile } from '../../../lib/db';
 import { getServerSession } from '../../../lib/session';
-import ProfileEditor from './ProfileEditor';
-import TutorCoursesManager from './TutorCoursesManager';
+import EditProfileToggle from './EditProfileToggle';
+import EnrollmentsToggle from './EnrollmentsToggle';
+import TutorCoursesToggle from './TutorCoursesToggle';
 import RatingStars from './RatingStars';
 import { sql } from '../../../lib/db';
 
@@ -24,6 +25,7 @@ export default async function Perfil() {
   }
   
   const userId = session.userId;
+  const profile = await getUserProfile(userId);
   const enrollments = (await getEnrollmentsForUser(userId)) as SimpleCourse[];
   // Obtener resumen de calificaciones del usuario (como rateado)
   let rating: { avg: number; total: number } = { avg: 0, total: 0 };
@@ -48,38 +50,48 @@ export default async function Perfil() {
   return (
     <div>
       <div className="flex items-center gap-6 mb-6">
-        <div className="w-20 h-20 rounded-full bg-gray-200 flex items-center justify-center text-3xl text-gray-600">{session.userName?.[0] || 'U'}</div>
+        <div className="w-20 h-20 rounded-full bg-gray-200 overflow-hidden flex items-center justify-center text-3xl text-gray-600">
+          {profile?.avatar_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={profile.avatar_url} alt="avatar" className="w-full h-full object-cover" />
+          ) : (
+            <span>{session.userName?.[0] || 'U'}</span>
+          )}
+        </div>
         <div>
           <h1 className="text-2xl font-bold">{session.userName}</h1>
-          <p className="text-sm text-gray-500">{session.userEmail} · <span className="capitalize">{session.userRole}</span></p>
+          {(() => {
+            const r = (session.userRole || '').toLowerCase();
+            const roleLabel = r === 'tutor' ? 'Tutor' : r === 'student' ? 'Estudiante' : (session.userRole || '');
+            return (
+              <p className="text-sm text-gray-500">{session.userEmail} · <span>{roleLabel}</span></p>
+            );
+          })()}
           <p className="text-xs text-gray-400 mt-1">Usuario autenticado</p>
         </div>
       </div>
 
       <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="bg-white rounded-lg p-4 shadow-sm lg:col-span-2">
-          <h2 className="text-lg font-semibold mb-3">Editar perfil</h2>
-          <ProfileEditor />
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Perfil</h2>
+          </div>
+          <EditProfileToggle />
         </div>
 
         <div className="bg-white rounded-lg p-4 shadow-sm">
-          <h2 className="text-lg font-semibold mb-3">Cursos inscritos</h2>
-          {enrollments.length === 0 ? (
-            <p className="text-gray-500">No estás inscrito en cursos.</p>
-          ) : (
-            <ul className="space-y-2">
-              {enrollments.map((c: SimpleCourse) => (
-                <li key={c.id} className="text-sm text-gray-700">{c.code} — {c.name}</li>
-              ))}
-            </ul>
-          )}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-semibold">Cursos inscritos</h2>
+          </div>
+          <EnrollmentsToggle />
         </div>
       </section>
 
       <section className="mt-6 bg-white rounded-lg p-4 shadow-sm">
-        <h2 className="text-lg font-semibold mb-2">Inscribirse para impartir cursos</h2>
-        <p className="text-sm text-gray-600 mb-3">Selecciona los cursos que deseas impartir como tutor.</p>
-        <TutorCoursesManager />
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold">Impartir cursos</h2>
+        </div>
+        <TutorCoursesToggle />
       </section>
 
       <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
