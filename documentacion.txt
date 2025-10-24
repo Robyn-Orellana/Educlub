@@ -1,0 +1,343 @@
+# Documentación Técnica – Proyecto EduClub
+
+Fecha: 21/10/2025
+
+## Resumen
+EduClub es una plataforma web para comunidad universitaria que facilita tutorías, resolución de dudas vía foros, gestión de recursos y programación de sesiones. Está construida con Next.js (App Router), TypeScript y PostgreSQL (Neon) e integra almacenamiento S3, Firebase (cliente) y utilidades para videollamadas con Jitsi.
+
+---
+
+## IDE y herramientas principales
+- IDE: Visual Studio Code (recomendado para desarrollo)
+- Lenguaje: TypeScript estricto (TS ≥ 5)
+- Framework web: Next.js 15 (App Router, `src/app`)
+- UI y estilos: Tailwind CSS v4 (vía PostCSS), fuentes Google (Geist)
+- Bundling/CSS: LightningCSS (optimización CSS)
+- Linter: ESLint 9 con configuración `next/core-web-vitals` y `next/typescript`
+- Runtime Node: Node.js 18.18 – 22.x (engines)
+- Base de datos: PostgreSQL (Neon serverless)
+- ORM/SQL: `@neondatabase/serverless` (tagged templates) y Drizzle (kit instalado; esquema SQL en carpeta `sql/`)
+- Almacenamiento de archivos: AWS S3 (presigned PUT) con `@aws-sdk/*`
+- Firebase (cliente): Auth/Firestore/Storage (SDK web modular v10)
+- Calendario: FullCalendar React
+- Utilidades de videollamada: Jitsi (links a meet.jit.si)
+
+---
+
+## Estructura del proyecto
+Raíz del repo:
+- `src/`
+	- `app/` App Router de Next.js (páginas, layout, estilos)
+		- `api/` Endpoints HTTP (rutas de servidor)
+		- `dashboard/` Secciones de la aplicación autenticada (calendario, foros, etc.)
+	- `lib/` Funciones de dominio y utilidades (DB, sesión, storage, Firebase, Jitsi, tipos)
+	- `middleware.ts` Protección de rutas (redirige a `/login` si no hay cookie `sid`)
+- `sql/` Scripts SQL de esquema/migraciones utilitarias
+- Configuración: `package.json`, `next.config.ts`, `tsconfig.json`, `eslint.config.mjs`, `postcss.config.mjs`
+
+---
+
+## Arquitectura y módulos
+### Frontend (Next.js App Router)
+- Layout global: `src/app/layout.tsx`
+- Estilos globales: `src/app/globals.css` con tema oscuro por defecto y tokens CSS personalizados.
+- Páginas principales: `src/app/page.tsx`, `src/app/login/page.tsx`, `src/app/register/page.tsx` y secciones dentro de `src/app/dashboard/*`.
+- Componentes de UI específicos por sección (perfil, cursos, foros, recursos, informes, notificaciones, calendario).
+
+### Rutas de API (server)
+Se ubican en `src/app/api/*`. Entre las más relevantes:
+- Autenticación: `/api/login`, `/api/logout`, `/api/auth/session`
+- Perfil: `/api/profile`, `/api/profile/enrollments`, `/api/profile/tutor-courses`
+- Cursos y participantes: `/api/courses`, `/api/course-participants`
+- Foros: `/api/forums`, `/api/forums/[id]`, `/api/forums/comments`
+- Calificaciones: `/api/ratings`
+- Notificaciones: `/api/notifications`, `/api/notifications/[id]`
+- Sesiones: `/api/sessions`, `/api/sessions/[id]`
+- Recursos: `/api/resources/presign`, `/api/uploads/presign`
+- Usuarios (búsqueda/listado): `/api/users/lookup`, `/api/users/list`
+
+Nota: los contratos exactos se implementan en cada `route.ts`; ver carpeta correspondiente para detalles por endpoint.
+
+### Middleware de autenticación
+`src/middleware.ts` protege `/dashboard/*`, `/perfil/*`, `/cursos/*`. Si no existe cookie `sid` se redirige a `/login?next=…`.
+
+### Sesiones y autenticación de servidor
+- `lib/session.ts` lee la cookie `sid` y valida contra `auth_sessions` en Postgres, uniendo con `users` y `roles`. Devuelve un objeto `ServerSession` con identidad y rol.
+- Cookie esperada: `sid` con UUID v1–v5 válido.
+
+### Base de datos (PostgreSQL/Neon)
+- Cliente: `lib/db.ts` usa `neon(DATABASE_URL)` como tagged template `sql` con tipado genérico por fila.
+- `sql/` contiene esquemas y funciones auxiliares (por ejemplo: `auth_schema.sql`, `forums.sql`, `ratings.sql`, `scheduling_functions.sql`, etc.).
+- Tablas referenciadas en código: `users`, `roles`, `auth_sessions`, `courses`, `enrollments`, `tutor_courses`, `tutoring_sessions`, `reservations`, `ratings`, `forum_threads`, `forum_comments`, `forum_thread_likes`, `forum_comment_likes`, `forum_attachments`.
+- Funciones destacadas (en `lib/db.ts`):
+	- Cursos overview: conteos de inscritos, sesiones y promedio de estrellas simulado.
+	- Consultas de inscripciones y asignaciones de tutor.
+	- Próximas sesiones del usuario (host/invitado).
+	- CRUD básico de foros, comentarios y likes, con attachments.
+	- Calificaciones con manejo de esquemas legacy (columnas opcionales y existencia dinámica por `information_schema`).
+
+### Recursos y almacenamiento de archivos
+- Subidas: servidor genera URL de subida prefirmada (S3) mediante `lib/storage.ts` (`getPresignedPutUrl`). El cliente sube directamente con PUT a S3.
+- URLs públicas: derivadas de `S3_PUBLIC_URL_BASE` o patrón del bucket/región.
+- Listado/Paginación de recursos: `lib/resources.ts` consulta Firestore colección `resources` (paginación por `createdAtTs` y `startAfter`). Modelo `ResourceDoc` con metadatos (curso/semestre/uploader, contentType, tamaño, storagePath, downloadURL, timestamps).
+- Firebase Web SDK: `lib/firebase.ts` inicializa solo en cliente; incluye App Check opcional (reCAPTCHA v3) y helpers de diagnóstico.
+
+### Videollamadas (Jitsi)
+- `lib/jitsi.ts` genera nombres de sala con UUID y crea links `https://meet.jit.si/<room>`.
+
+---
+
+## Estilos y diseño
+- Tailwind CSS v4 vía `@tailwindcss/postcss` (config en `postcss.config.mjs`).
+- Tema oscuro global en `globals.css`, con overrides de utilidades comunes para buena legibilidad.
+- Fuentes: Geist (sans y mono) desde Google Fonts (Next.js Fonts).
+
+---
+
+## Tipado, convenciones y calidad
+- TypeScript estricto (`strict: true`, `noEmit: true`).
+- Alias de paths: `@/* → ./src/*` (ver `tsconfig.json`).
+- ESLint: base Next + TypeScript; ignorados `.next/`, `out/`, `build/`.
+
+---
+
+## Scripts de npm
+- `dev`: inicia el servidor de desarrollo de Next.js.
+- `build`: compila la app (`next build`).
+- `start`: arranca la app en modo producción (`next start`).
+- `lint`: ejecuta ESLint.
+
+Engines: Node >= 18.18 y < 23.
+
+---
+
+## Variables de entorno
+Configurar un archivo `.env.local` (no versionado) en desarrollo y variables en la plataforma de despliegue.
+
+### Base de datos (Neon/Postgres)
+- `DATABASE_URL`: cadena de conexión (postgresql) para Neon.
+
+### AWS S3 (subidas directas desde cliente mediante URL prefirmada generada en servidor)
+- `AWS_REGION`: región del bucket (p. ej., `us-east-1`).
+- `S3_PUBLIC_URL_BASE` (opcional): base pública para construir URLs (si se usa CDN/custom domain). Por defecto usa `https://<bucket>.s3.<region>.amazonaws.com`.
+
+### Firebase Web SDK (solo cliente; claves públicas)
+- `NEXT_PUBLIC_FB_API_KEY`
+- `NEXT_PUBLIC_FB_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FB_PROJECT_ID`
+- `NEXT_PUBLIC_FB_STORAGE_BUCKET`
+- `NEXT_PUBLIC_FB_APP_ID`
+- `NEXT_PUBLIC_FB_APPCHECK_SITE_KEY` (opcional, para App Check reCAPTCHA v3)
+- `NEXT_PUBLIC_FB_APPCHECK_DEBUG` = `true` (opcional en dev; habilita token de debug)
+
+---
+
+## Flujos principales
+1) Autenticación y sesión
+- Usuario se autentica (endpoint `/api/login`); servidor crea registro en `auth_sessions` y emite cookie httpOnly `sid`.
+- Middleware exige cookie en rutas protegidas; `lib/session.ts` valida y expone información del usuario/rol para SSR.
+
+2) Tutorías y calendario
+- `tutoring_sessions` almacena programación; `reservations` relaciona estudiantes.
+- Vistas de calendario usan FullCalendar y `getSessionsForTutor` para popular eventos.
+
+3) Foros
+- `forum_threads` y `forum_comments` con likes y attachments.
+- Endpoints permiten crear hilos, comentar, alternar likes y listar hilos/comentarios.
+
+4) Calificaciones
+- `ratings` guarda puntajes 1..5, con soporte para esquemas legacy (detección de columnas). Se permite upsert por (rater, ratee, session).
+
+5) Recursos
+- El servidor presigna PUT a S3; el cliente sube directamente.
+- Metadatos se gestionan/consultan en Firestore (`resources`), con paginación por timestamp.
+
+### Subida de archivos a Firebase (Storage) y reglas
+En la sección de Recursos, la app también soporta subida directa a Firebase Storage desde el cliente y guarda metadatos en Firestore.
+
+- Componente: `src/components/ResourceUploader.tsx`
+- Helpers: `src/lib/firebase.ts` (Auth/Firestore/Storage, App Check) y `src/lib/resources.ts` (listado/paginación)
+- Flujo:
+	1. Usuario autenticado (Firebase Auth) y `ensureAppCheck()` antes de usar Storage si App Check está enforzado.
+	2. Genera `resourceId = crypto.randomUUID()` y ruta: `resources/{semesterId}/{courseId}/{resourceId}/{filename}`.
+	3. Sube con `uploadBytesResumable(ref(storage, storagePath), file, { contentType })` y muestra progreso.
+	4. Obtiene `downloadURL` con `getDownloadURL`.
+	5. Inserta documento en Firestore colección `resources` con: título, semesterId, courseId, uploaderId, contentType, size, storagePath, downloadURL, `createdAt/updatedAt` (ISO), y `createdAtTs/updatedAtTs` (`serverTimestamp()`).
+
+- Validaciones del cliente:
+	- Título obligatorio; archivo requerido.
+	- Tamaño máximo: 1 GB (`MAX_SIZE_BYTES`).
+	- Extensiones bloqueadas: `.exe`, `.sh`, `.bat`.
+
+- Variables requeridas (ya listadas): `NEXT_PUBLIC_FB_PROJECT_ID`, `NEXT_PUBLIC_FB_STORAGE_BUCKET`, `NEXT_PUBLIC_FB_API_KEY`, etc. App Check opcional con `NEXT_PUBLIC_FB_APPCHECK_SITE_KEY`.
+
+- Reglas sugeridas de Firebase Storage (ajústalas a tu política):
+	```
+	rules_version = '2';
+	service firebase.storage {
+		match /b/{bucket}/o {
+			// Requiere App Check si está enforzado desde consola (recomendado)
+			function isAuthed() { return request.auth != null; }
+
+			// Sólo permitir escrituras autenticadas bajo el prefijo resources/
+			match /resources/{semesterId}/{courseId}/{resourceId}/{fileName} {
+				allow read: if true; // o restringir a usuarios autenticados: isAuthed();
+				allow write: if isAuthed()
+					&& request.resource.size < 1 * 1024 * 1024 * 1024 // < 1GB
+					&& request.resource.contentType.matches('.*');
+			}
+
+			// Denegar por defecto
+			match /{allPaths=**} { allow read, write: if false; }
+		}
+	}
+	```
+
+- Reglas sugeridas de Firestore para colección `resources`:
+	```
+	rules_version = '2';
+	service cloud.firestore {
+		match /databases/{database}/documents {
+			function isAuthed() { return request.auth != null; }
+
+			match /resources/{docId} {
+				allow read: if true; // o restringir por curso/rol
+				allow create: if isAuthed() &&
+					request.resource.data.uploaderId == request.auth.uid &&
+					request.resource.data.title is string &&
+					request.resource.data.semesterId is string &&
+					request.resource.data.courseId is string &&
+					request.resource.data.contentType is string &&
+					request.resource.data.size is int && request.resource.data.size < 1 * 1024 * 1024 * 1024 &&
+					request.resource.data.storagePath is string &&
+					request.resource.data.downloadURL is string &&
+					request.time == request.resource.data.createdAtTs;
+
+				allow update: if false; // o permitir sólo ciertos campos
+				allow delete: if isAuthed() && resource.data.uploaderId == request.auth.uid;
+			}
+		}
+	}
+	```
+
+- Notas de seguridad y despliegue:
+	- Activa App Check con reCAPTCHA v3 para Storage/Firestore y marca “enforce” en consola para producción.
+	- Considera hacer públicos sólo los `read` de `resources/*` o servir descargas con un proxy si necesitas auditoría.
+	- Mantén consistencia: si borras el doc en Firestore debería limpiarse el objeto en Storage (vía Cloud Function opcional).
+
+---
+
+## Seguridad
+- Cookies de sesión httpOnly (no accesibles a JS del cliente).
+- Consultas SQL con tagged template de `@neondatabase/serverless` (parámetros tipados y seguros ante inyección).
+- Firebase Admin no se utiliza en cliente; el SDK web usa claves públicas.
+- App Check (opcional) para Storage/Firestore.
+- Validación de UUID en cookie `sid` antes de consultar DB.
+
+---
+
+## Despliegue
+- Frontend/SSR: Vercel (Next.js 15 compatible). Configurar variables de entorno en el proyecto Vercel.
+- Base de datos: Neon (PostgreSQL serverless). Aplicar esquema desde `sql/` o gestionar con Drizzle/CLI según preferencia.
+- Archivos: AWS S3 (o compatible). Configurar bucket y políticas de CORS/ACL según uso público.
+- Firebase: Proyecto con Firestore/Storage para metadatos y cargas desde cliente.
+
+Pasos generales:
+1. Crear proyecto en Vercel y vincular repo.
+2. Configurar `DATABASE_URL`, `AWS_REGION`, `S3_PUBLIC_URL_BASE` (opcional) y variables `NEXT_PUBLIC_FB_*`.
+3. Proveer acceso a Neon (IP allowlist no es necesario con Neon serverless) y crear esquema (ejecutar scripts en `sql/`).
+4. Deploy: Vercel auto-detecta Next.js y construye con `npm run build`.
+
+---
+
+## Puesta en marcha local (desarrollo)
+Requisitos: Node 18.18–22.x y npm.
+
+1) Instalar dependencias
+- `npm install`
+
+2) Variables de entorno (`.env.local`)
+- Establecer `DATABASE_URL`, `AWS_REGION`, `NEXT_PUBLIC_FB_*`.
+
+3) Arrancar el entorno
+- `npm run dev`
+
+4) Linter (opcional)
+- `npm run lint`
+
+---
+
+## Convenciones y patrones
+- App Router: cada `route.ts` implementa métodos HTTP típicos (`GET/POST/...`).
+- Tipos compartidos en `src/lib/types/*`.
+- Utilidades aisladas por dominio: DB (`db.ts`), sesión (`session.ts`), storage (`storage.ts`), Firebase (`firebase.ts`), Jitsi (`jitsi.ts`).
+- Alias `@/` para imports internos.
+
+---
+
+## Esquema de datos (resumen funcional)
+- `users(id, first_name, last_name, email, role_id, avatar_url, created_at, ...)`
+- `roles(id, name)`
+- `auth_sessions(id uuid, user_id, expires_at, revoked_at)`
+- `courses(id, code, name, description, status)`
+- `tutor_courses(tutor_id, course_id, assigned_at)`
+- `enrollments(user_id, course_id, enrolled_at)`
+- `tutoring_sessions(id, tutor_id, course_id, scheduled_at, duration_min, platform, meet_link/join_url, status)`
+- `reservations(id, session_id, student_id, status)`
+- `ratings(id, rater_id, ratee_id, session_id, reservation_id?, score, comment, created_at, ... [tutor_id/student_id legacy])`
+- `forum_threads(id, author_id, title, body, created_at, updated_at, last_comment_at, comments_count)`
+- `forum_comments(id, thread_id, author_id, parent_id, body, created_at, updated_at)`
+- `forum_thread_likes(user_id, thread_id)`
+- `forum_comment_likes(user_id, comment_id)`
+- `forum_attachments(id, thread_id?, comment_id?, author_id, kind, url, title, created_at)`
+
+Consultar carpeta `sql/` para DDL y funciones auxiliares.
+
+---
+
+## Diagramas (simplificados)
+Arquitectura general (alto nivel):
+
+Cliente (Next.js/React) ──> API Routes (Next Server) ──> PostgreSQL (Neon)
+												 └─> Firebase (Firestore/Storage)
+												 └─> AWS S3 (subidas con presign)
+												 └─> Jitsi (meet.jit.si)
+
+---
+
+## Pruebas y calidad
+- Actualmente no hay pruebas automatizadas en el repo. Recomendaciones:
+	- Unit tests: funciones de `lib/` (parsers, formatos, helpers SQL con consultas simuladas).
+	- E2E ligeras: flujos críticos (login, crear hilo, subir recurso, reservar sesión).
+	- Integrar en CI (GitHub Actions) con `npm run build` y linters.
+
+---
+
+## Solución de problemas (FAQ)
+- Error `DATABASE_URL no configurada` o fallas en consultas: defina `DATABASE_URL` en `.env.local` o variables del entorno de despliegue.
+- No carga Firebase en SSR: las utilidades de `lib/firebase.ts` lanzan si se usan en servidor. Importe y use solo en componentes cliente.
+- Subidas a S3 fallan: verifique `AWS_REGION` y CORS del bucket; confirme que la URL presignada se usa con método PUT y `Content-Type` correcto.
+- App Check requerido en Storage/Firestore: configure `NEXT_PUBLIC_FB_APPCHECK_SITE_KEY` y, en dev, `NEXT_PUBLIC_FB_APPCHECK_DEBUG=true`.
+- Redirección a login en rutas protegidas: confirme existencia de cookie `sid` y validez (UUID). Verifique expiración/revocación en `auth_sessions`.
+
+---
+
+## Mantenimiento y futuras mejoras
+- Formalizar migraciones (Drizzle/DDL) a partir de `sql/` y pipeline de despliegue.
+- Añadir pruebas unitarias/E2E y cobertura mínima.
+- Instrumentación (logs estructurados) y métricas (p. ej., trazas de consultas).
+- Endurecer políticas de S3 (evitar `public-read` si se sirve por CDN con signed URLs).
+- Paginación y búsqueda avanzada en foros y recursos.
+
+---
+
+## Metadatos del proyecto
+- Nombre: `educlub`
+- Next.js: 15.5.2
+- React: 19.1.0
+- Drizzle ORM: 0.44.x (kit presente)
+- PostgreSQL driver: `@neondatabase/serverless` 1.x, `pg` 8.x
+- Tailwind CSS: 4.x via PostCSS
+- ESLint: 9.x
+
+Fin de la documentación.

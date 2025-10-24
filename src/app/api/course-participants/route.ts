@@ -3,6 +3,8 @@ import { sql } from '../../../lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,7 +14,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'course_code requerido' }, { status: 400 });
     }
 
-    const ids = await sql<{ id: number }>`SELECT id FROM courses WHERE code = ${course_code} LIMIT 1;`;
+    // Buscar curso case-insensitive para mayor robustez
+    const ids = await sql<{ id: number }>`SELECT id FROM courses WHERE LOWER(code) = LOWER(${course_code}) LIMIT 1;`;
     const courseId = ids?.[0]?.id;
     if (!courseId) {
       return NextResponse.json({ ok: false, error: 'Curso no encontrado' }, { status: 404 });
@@ -40,15 +43,23 @@ export async function GET(req: NextRequest) {
       email: u.email,
     });
 
-    return NextResponse.json({
+    const body = {
       ok: true,
       course_id: Number(courseId),
       tutors: tutors.map(mapUser),
       students: students.map(mapUser),
+    };
+    return NextResponse.json(body, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('/api/course-participants error:', message);
-    return NextResponse.json({ ok: false, error: 'Error interno' }, { status: 500 });
+    return NextResponse.json({ ok: false, error: 'Error interno' }, {
+      status: 500,
+      headers: { 'Cache-Control': 'no-store, no-cache, must-revalidate' },
+    });
   }
 }

@@ -109,7 +109,7 @@ export default function CoursesView({ courses }: { courses: Course[] }) {
                       const serverNames = Array.isArray(c.tutors) && c.tutors.length > 0 ? (c.tutors as string[]) : undefined;
                       const names = serverNames ?? tutorsByCode[c.code];
                       if (names && names.length > 0) return names.join(', ');
-                      if (loadingCodes[c.code]) return 'Cargando…';
+                      if (loadingCodes[c.code]) return '---';
                       // Fallback al tutor singular si existiera en los datos
                       return c.tutor || '—';
                     })()}
